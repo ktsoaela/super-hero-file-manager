@@ -1,0 +1,13 @@
+{
+  "name": "stark-file-manager",
+  "productName": "Stark File Manager",
+  "version": "1.0.0",
+  "description": "Electron file manager with a directory column, folders sorted by size, and desktop folders.",
+  "main": "src/main.js",
+  "scripts": {
+    "start": "electron ."
+  },
+  "devDependencies": {
+    "electron": "^33.4.11"
+  }
+}
