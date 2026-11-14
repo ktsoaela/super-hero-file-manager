@@ -435,7 +435,15 @@ ipcMain.on('measure-start', (event, payload) => {
   }
 
   measureFolders(safeFolders, isActive, (result) => {
-    send({ token, kind, path: result.path, bytes: result.bytes, error: result.error, done: false });
+    send({
+      token,
+      kind,
+      path: result.path,
+      bytes: result.bytes,
+      error: result.error,
+      partial: Boolean(result.partial),
+      done: false,
+    });
   })
     .then(() => send({ token, kind, done: true }))
     .catch((error) => {

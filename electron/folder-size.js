@@ -1,8 +1,24 @@
 const fs = require('fs/promises');
 const path = require('path');
 
-const READ_LIMIT = 24;
-const STAT_BATCH = 64;
+const READ_LIMIT = 48;
+const STAT_BATCH = 96;
+const CACHE_MAX = 4000;
+
+/** path → { bytes, mtimeMs, error } — reused when the folder mtime has not changed */
+const cache = new Map();
+
+const keyOf = (dir) => path.normalize(dir).toLowerCase();
+
+function remember(dir, bytes, mtimeMs, error) {
+  const key = keyOf(dir);
+  if (cache.has(key)) cache.delete(key);
+  cache.set(key, { bytes, mtimeMs, error: Boolean(error) });
+  while (cache.size > CACHE_MAX) {
+    const oldest = cache.keys().next().value;
+    cache.delete(oldest);
+  }
+}
 
 async function sumFileSizes(files, isActive) {
   let total = 0;
@@ -23,6 +39,12 @@ async function sumFileSizes(files, isActive) {
   return total;
 }
 
+/**
+ * Two-phase measure so the deck can settle quickly:
+ * 1. Cache hit (same folder mtime) → emit final immediately
+ * 2. Shallow pass → direct files only, emit partial so UI can sort once
+ * 3. Deep BFS → emit final when each root finishes
+ */
 function measureFolders(folders, isActive, onOne) {
   return new Promise((resolve) => {
     const roots = new Map();
@@ -30,6 +52,7 @@ function measureFolders(folders, isActive, onOne) {
     const queue = [];
     let pending = 0;
     let settled = false;
+    let pendingMtimes = 0;
 
     const finish = () => {
       if (settled) return;
@@ -37,8 +60,14 @@ function measureFolders(folders, isActive, onOne) {
       resolve();
     };
 
+    const emit = (root, partial) => {
+      const info = roots.get(root);
+      if (!isActive() || !info) return;
+      onOne({ path: root, bytes: info.bytes, error: info.error, partial: Boolean(partial) });
+    };
+
     const enqueue = (root, dir) => {
-      const key = path.normalize(dir).toLowerCase();
+      const key = keyOf(dir);
       if (seen.has(key)) return;
       seen.add(key);
       const info = roots.get(root);
@@ -46,12 +75,19 @@ function measureFolders(folders, isActive, onOne) {
       queue.push({ root, dir });
     };
 
-    for (const folder of folders) {
-      roots.set(folder.path, { bytes: 0, dirs: 0, error: false, finished: false });
-    }
+    const startDeep = (folder) => {
+      enqueue(folder.path, folder.path);
+    };
 
     for (const folder of folders) {
-      enqueue(folder.path, folder.path);
+      roots.set(folder.path, {
+        bytes: 0,
+        dirs: 0,
+        error: false,
+        finished: false,
+        shallowDone: false,
+        mtimeMs: 0,
+      });
     }
 
     const pump = () => {
@@ -70,6 +106,8 @@ function measureFolders(folders, isActive, onOne) {
             if (!isActive()) return;
 
             const files = [];
+            const isRoot = keyOf(job.dir) === keyOf(job.root);
+
             for (const entry of entries) {
               const full = path.join(job.dir, entry.name);
               if (entry.isSymbolicLink()) continue;
@@ -79,10 +117,20 @@ function measureFolders(folders, isActive, onOne) {
 
             const bytes = await sumFileSizes(files, isActive);
             if (isActive()) info.bytes += bytes;
+
+            // First read of each root: emit a fast partial so the stack can sort.
+            if (isRoot && !info.shallowDone) {
+              info.shallowDone = true;
+              emit(job.root, true);
+            }
           })
           .catch(() => {
-            if (path.normalize(job.dir).toLowerCase() === path.normalize(job.root).toLowerCase()) {
+            if (keyOf(job.dir) === keyOf(job.root)) {
               info.error = true;
+              if (!info.shallowDone) {
+                info.shallowDone = true;
+                emit(job.root, true);
+              }
             }
           })
           .finally(() => {
@@ -91,9 +139,8 @@ function measureFolders(folders, isActive, onOne) {
 
             if (info.dirs <= 0 && !info.finished) {
               info.finished = true;
-              if (isActive()) {
-                onOne({ path: job.root, bytes: info.bytes, error: info.error });
-              }
+              remember(job.root, info.bytes, info.mtimeMs, info.error);
+              if (isActive()) emit(job.root, false);
             }
 
             if (!isActive()) {
@@ -102,24 +149,53 @@ function measureFolders(folders, isActive, onOne) {
             }
 
             pump();
-            if (pending === 0 && queue.length === 0) finish();
+            if (pending === 0 && queue.length === 0 && pendingMtimes === 0) finish();
           });
       }
     };
 
-    if (queue.length === 0) {
-      for (const folder of folders) {
-        const info = roots.get(folder.path);
-        if (!info.finished) {
-          info.finished = true;
-          onOne({ path: folder.path, bytes: 0, error: true });
-        }
-      }
+    // Resolve cache / mtime first, then only deep-walk the misses.
+    pendingMtimes = folders.length;
+    if (!folders.length) {
       finish();
       return;
     }
 
-    pump();
+    for (const folder of folders) {
+      fs.stat(folder.path)
+        .then((stat) => {
+          if (!isActive()) return;
+          const info = roots.get(folder.path);
+          info.mtimeMs = stat.mtimeMs;
+          const hit = cache.get(keyOf(folder.path));
+          if (hit && hit.mtimeMs === stat.mtimeMs) {
+            info.bytes = hit.bytes;
+            info.error = hit.error;
+            info.finished = true;
+            info.shallowDone = true;
+            emit(folder.path, false);
+            return;
+          }
+          startDeep(folder);
+        })
+        .catch(() => {
+          if (!isActive()) return;
+          const info = roots.get(folder.path);
+          info.error = true;
+          info.finished = true;
+          info.shallowDone = true;
+          emit(folder.path, false);
+        })
+        .finally(() => {
+          pendingMtimes -= 1;
+          if (!isActive()) {
+            finish();
+            return;
+          }
+          pump();
+          if (pending === 0 && queue.length === 0 && pendingMtimes === 0) finish();
+        });
+    }
   });
 }
 
