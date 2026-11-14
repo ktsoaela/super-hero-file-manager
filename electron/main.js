@@ -159,7 +159,7 @@ function createWindow() {
     minWidth: 1100,
     minHeight: 680,
     backgroundColor: '#050607',
-    title: 'Stark File Manager',
+    title: 'Super Hero File Manager',
     icon: fsSync.existsSync(ICON) ? nativeImage.createFromPath(ICON) : undefined,
     autoHideMenuBar: true,
     titleBarStyle: 'hidden',
@@ -198,8 +198,8 @@ function createWindow() {
   });
 }
 
-app.setName('Stark File Manager');
-app.setAppUserModelId('com.stark.filemanager');
+app.setName('Super Hero File Manager');
+app.setAppUserModelId('com.superhero.filemanager');
 Menu.setApplicationMenu(null);
 
 const gotLock = app.requestSingleInstanceLock();

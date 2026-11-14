@@ -114,7 +114,7 @@ function CodeBody({ file, index, total }) {
       <table className="title-block">
         <tbody>
           <tr>
-            <td colSpan={2}>STARK INDUSTRIES · SCHEMATIC</td>
+            <td colSpan={2}>SUPER HERO FILE MANAGER · SCHEMATIC</td>
           </tr>
           <tr>
             <td>TYPE {toCode(file.ext)}</td>

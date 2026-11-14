@@ -3,7 +3,7 @@ const fsp = require('fs/promises');
 const path = require('path');
 const { pipeline } = require('stream/promises');
 
-const FOLDER = 'STARK_TRANSFER';
+const FOLDER = 'SUPERHERO_TRANSFER';
 const TICK_MS = 120;
 
 let active = null;

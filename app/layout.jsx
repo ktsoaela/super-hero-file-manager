@@ -1,7 +1,7 @@
 import './globals.css';
 
 export const metadata = {
-  title: 'Stark File Manager',
+  title: 'Super Hero File Manager',
 };
 
 export default function RootLayout({ children }) {

@@ -73,7 +73,8 @@ p {
 .brand {
   color: #e3e9ed;
   font-weight: 700;
-  letter-spacing: 0.34em;
+  letter-spacing: 0.18em;
+  white-space: nowrap;
 }
 
 .brand-sub {
@@ -1488,9 +1489,9 @@ p {
 
 .saver-logo p {
   font-family: var(--mono);
-  font-size: 18px;
+  font-size: 16px;
   font-weight: 700;
-  letter-spacing: 0.5em;
+  letter-spacing: 0.28em;
   color: #e4eef2;
 }
 

@@ -1,6 +1,6 @@
 {
   "name": "stark-file-manager",
-  "productName": "Stark File Manager",
+  "productName": "Super Hero File Manager",
   "version": "2.0.0",
   "private": true,
   "description": "Electron + Next.js file manager with a 3D folder stack sorted by size.",

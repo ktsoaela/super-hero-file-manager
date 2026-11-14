@@ -416,7 +416,7 @@ export default function FileManager() {
     <div className={`shell${term.open ? ' is-term' : ''}`}>
       <header className="topbar">
         <span className="brand">
-          STARK<span className="brand-sub">INDUSTRIES</span>
+          SUPER HERO<span className="brand-sub">FILE MANAGER</span>
         </span>
         <span className="topbar-rule" />
         <nav className="crumbs" aria-label="Current path">

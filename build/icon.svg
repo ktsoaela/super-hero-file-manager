@@ -1,30 +1,21 @@
 <svg xmlns="http://www.w3.org/2000/svg" width="256" height="256" viewBox="0 0 256 256">
-  <defs>
-    <linearGradient id="plate" x1="0" y1="0" x2="1" y2="1">
-      <stop offset="0" stop-color="#6a7079"/>
-      <stop offset="0.55" stop-color="#3b4048"/>
-      <stop offset="1" stop-color="#22252a"/>
-    </linearGradient>
-    <linearGradient id="back" x1="0" y1="0" x2="0" y2="1">
-      <stop offset="0" stop-color="#d4dade"/>
-      <stop offset="1" stop-color="#9aa3aa"/>
-    </linearGradient>
-    <linearGradient id="sheen" x1="0" y1="0" x2="0" y2="1">
-      <stop offset="0" stop-color="#fff" stop-opacity="0.3"/>
-      <stop offset="1" stop-color="#fff" stop-opacity="0"/>
-    </linearGradient>
-  </defs>
-  <!-- rear cards of the deck -->
-  <path d="M120 40 L208 22 L222 150 L134 168 Z" fill="#2a2e34" opacity="0.35"/>
-  <path d="M100 56 L190 38 L204 168 L114 186 Z" fill="#2a2e34" opacity="0.55"/>
-  <!-- folder back cover + tab -->
-  <path d="M30 70 L76 62 L88 72 L170 56 L186 196 L44 222 Z" fill="url(#back)" stroke="#7d868d" stroke-width="3"/>
-  <!-- front plate -->
-  <path d="M22 98 L180 72 L196 206 L38 236 Z" fill="url(#plate)" stroke="#5fd4ee" stroke-width="4"/>
-  <path d="M22 98 L180 72 L184 108 L26 134 Z" fill="url(#sheen)"/>
-  <!-- status chip -->
-  <path d="M150 168 L172 164 L176 194 L154 198 Z" fill="#1d3fc4"/>
-  <!-- text lines -->
-  <path d="M44 128 L128 114" stroke="#f5f7f9" stroke-width="10" stroke-linecap="round"/>
-  <path d="M46 150 L104 140" stroke="#cfd6db" stroke-width="7" stroke-linecap="round" opacity="0.8"/>
+  <!-- Flat camera memory card. No gradients, no stacked plates. -->
+  <path
+    d="M48 44H156L208 96V212H48V156H70V112H48V44Z"
+    fill="#e7ecef"
+    stroke="#5e6970"
+    stroke-width="8"
+    stroke-linejoin="round"
+  />
+  <path d="M68 60H142V100H68Z" fill="#c5ced4" />
+  <path d="M68 60H142V72H68Z" fill="#3a94dc" />
+  <g fill="#1f6fb8">
+    <rect x="72" y="176" width="12" height="22" />
+    <rect x="90" y="176" width="12" height="22" />
+    <rect x="108" y="176" width="12" height="22" />
+    <rect x="126" y="176" width="12" height="22" />
+    <rect x="144" y="176" width="12" height="22" />
+    <rect x="162" y="176" width="12" height="22" />
+    <rect x="180" y="176" width="12" height="22" />
+  </g>
 </svg>

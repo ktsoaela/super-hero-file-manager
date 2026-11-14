@@ -87,7 +87,7 @@ export function Screensaver({ onWake }) {
           <circle cx="60" cy="60" r="18" fill="currentColor" opacity="0.85" />
         </svg>
         <p>
-          STARK<span>INDUSTRIES</span>
+          SUPER HERO<span>FILE MANAGER</span>
         </p>
       </div>
     </div>
