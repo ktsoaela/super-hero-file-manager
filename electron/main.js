@@ -1,11 +1,18 @@
-const { app, BrowserWindow, ipcMain, shell, Menu } = require('electron');
+const { app, BrowserWindow, ipcMain, shell, Menu, protocol, net } = require('electron');
 const fs = require('fs/promises');
 const os = require('os');
 const path = require('path');
+const { pathToFileURL } = require('url');
 const { execFile } = require('child_process');
 const { measureFolders } = require('./folder-size');
 
 const jobs = { inside: 0, desktop: 0 };
+const OUT_DIR = path.join(__dirname, '..', 'out');
+const HIDDEN_NAMES = new Set(['system volume information', 'config.msi', 'recovery']);
+
+protocol.registerSchemesAsPrivileged([
+  { scheme: 'app', privileges: { standard: true, secure: true, supportFetchAPI: true } },
+]);
 
 let mainWindow = null;
 
@@ -147,15 +154,29 @@ async function listDirectory(dirPath) {
   }
 }
 
+function serveExport() {
+  protocol.handle('app', (request) => {
+    let relative = decodeURIComponent(new URL(request.url).pathname);
+    if (relative === '/' || relative === '') relative = '/index.html';
+    const target = path.normalize(path.join(OUT_DIR, relative));
+    if (!target.startsWith(OUT_DIR + path.sep) && target !== OUT_DIR) {
+      return new Response('Not found', { status: 404 });
+    }
+    return net.fetch(pathToFileURL(target).toString());
+  });
+}
+
 function createWindow() {
   mainWindow = new BrowserWindow({
-    width: 1280,
-    height: 840,
-    minWidth: 1020,
+    width: 1360,
+    height: 860,
+    minWidth: 1100,
     minHeight: 680,
-    backgroundColor: '#0c0f0e',
+    backgroundColor: '#050607',
     title: 'Stark File Manager',
     autoHideMenuBar: true,
+    titleBarStyle: 'hidden',
+    titleBarOverlay: { color: '#050607', symbolColor: '#8b959c', height: 36 },
     webPreferences: {
       preload: path.join(__dirname, 'preload.js'),
       contextIsolation: true,
@@ -165,7 +186,8 @@ function createWindow() {
     },
   });
 
-  const page = path.join(__dirname, 'renderer', 'index.html');
+  const page = process.env.STARK_RENDERER_URL || 'app://stark/index.html';
+
   mainWindow.webContents.on('did-fail-load', (_event, code, description, url) => {
     console.error('did-fail-load', code, description, url);
   });
@@ -178,12 +200,12 @@ function createWindow() {
   mainWindow.webContents.on('console-message', (_event, level, message, line, sourceId) => {
     if (level >= 2) console.error(`[renderer] ${message} (${sourceId}:${line})`);
   });
-
   mainWindow.webContents.on('did-finish-load', () => {
     console.log('loaded', page);
   });
-  mainWindow.loadFile(page).catch((error) => {
-    console.error('loadFile', page, error);
+
+  mainWindow.loadURL(page).catch((error) => {
+    console.error('loadURL', page, error);
   });
 }
 
@@ -201,8 +223,10 @@ if (!gotLock) {
     mainWindow.focus();
   });
 
-  app.whenReady().then(createWindow);
-
+  app.whenReady().then(() => {
+    serveExport();
+    createWindow();
+  });
   app.on('window-all-closed', () => {
     if (process.platform !== 'darwin') app.quit();
   });
