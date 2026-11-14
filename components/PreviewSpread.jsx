@@ -40,7 +40,7 @@ function stamp(ms) {
   return `${d.getFullYear()}.${two(d.getMonth() + 1)}.${two(d.getDate())}`;
 }
 
-function Barcode({ seed }) {
+export function Barcode({ seed }) {
   const bars = useMemo(() => {
     let h = 0;
     for (const ch of seed) h = (h * 31 + ch.charCodeAt(0)) >>> 0;

@@ -1,79 +1,34 @@
-const { app, BrowserWindow, ipcMain, shell, Menu, protocol, net } = require('electron');
+const { app, BrowserWindow, ipcMain, shell, Menu, protocol, net, nativeImage, clipboard } = require('electron');
 const fs = require('fs/promises');
+const fsSync = require('fs');
 const os = require('os');
 const path = require('path');
 const { pathToFileURL } = require('url');
-const { execFile } = require('child_process');
 const { measureFolders } = require('./folder-size');
 const preview = require('./preview');
+const media = require('./media');
+const { allow, isAllowed } = require('./access');
+const { readVolumes } = require('./volumes');
+const { startTransfer, cancelTransfer } = require('./transfer');
+const { searchTree } = require('./search');
+const { runShell, stopShell } = require('./shell');
 
-const jobs = { inside: 0, desktop: 0 };
+const jobs = { inside: 0, rail: 0 };
 const OUT_DIR = path.join(__dirname, '..', 'out');
-const HIDDEN_NAMES = new Set(['system volume information', 'config.msi', 'recovery']);
+const ICON = path.join(__dirname, '..', 'build', 'icon.png');
+const LOCK_PROBE_LIMIT = 600;
 
 protocol.registerSchemesAsPrivileged([
   { scheme: 'app', privileges: { standard: true, secure: true, supportFetchAPI: true } },
+  { scheme: 'stark-file', privileges: { standard: true, secure: true, supportFetchAPI: true, stream: true, bypassCSP: true } },
 ]);
 
 let mainWindow = null;
+let lastVolumes = [];
 
-function runPowerShell(script) {
-  return new Promise((resolve, reject) => {
-    execFile(
-      'powershell.exe',
-      ['-NoProfile', '-NonInteractive', '-Command', script],
-      { timeout: 8000, windowsHide: true, maxBuffer: 1024 * 1024 },
-      (error, stdout) => {
-        if (error && !stdout) {
-          reject(error);
-          return;
-        }
-        resolve(stdout || '');
-      }
-    );
-  });
-}
-
-async function readSystemRoots() {
-  const home = os.homedir();
-  const fallback = {
-    home,
-    desktop: path.join(home, 'Desktop'),
-    drives: process.platform === 'win32' ? ['C:\\'] : ['/'],
-  };
-
-  if (process.platform !== 'win32') return fallback;
-
-  try {
-    const stdout = await runPowerShell(
-      [
-        '[Console]::OutputEncoding = [System.Text.Encoding]::UTF8',
-        "$desktop = [Environment]::GetFolderPath('Desktop')",
-        "Write-Output ('DESKTOP=' + $desktop)",
-        "Get-CimInstance Win32_LogicalDisk | ForEach-Object { Write-Output ('DRIVE=' + $_.DeviceID) }",
-      ].join('; ')
-    );
-
-    let desktop = '';
-    const drives = [];
-
-    for (const line of stdout.split(/\r?\n/)) {
-      if (line.startsWith('DESKTOP=')) desktop = line.slice('DESKTOP='.length).trim();
-      if (line.startsWith('DRIVE=')) {
-        const id = line.slice('DRIVE='.length).trim().toUpperCase();
-        if (/^[A-Z]:$/.test(id)) drives.push(`${id}\\`);
-      }
-    }
-
-    return {
-      home,
-      desktop: desktop || fallback.desktop,
-      drives: drives.length ? drives : fallback.drives,
-    };
-  } catch (error) {
-    console.error('bootstrap', error);
-    return fallback;
-  }
+async function volumes() {
+  lastVolumes = await readVolumes();
+  return lastVolumes;
 }
 
 function ancestry(dirPath) {
@@ -94,16 +49,28 @@ function ancestry(dirPath) {
 }
 
 function assertAbsolute(input) {
-  if (typeof input !== 'string' || !path.isAbsolute(input)) {
-    return null;
-  }
+  if (typeof input !== 'string' || !path.isAbsolute(input)) return null;
   return path.resolve(input);
 }
 
 function explain(error) {
   if (!error || error.code === 'ENOENT') return 'That folder no longer exists.';
-  if (error.code === 'EPERM' || error.code === 'EACCES') return 'This folder is not accessible.';
+  if (error.code === 'EPERM' || error.code === 'EACCES') return 'This folder is locked.';
+  if (['ENOTCONN', 'EHOSTDOWN', 'ENETUNREACH', 'EIO', 'UNKNOWN'].includes(error.code)) return 'That volume is disconnected.';
   return 'This folder could not be opened.';
+}
+
+/** A file is "locked" when another process holds it or we lack permission to read it. */
+async function probeLocked(file) {
+  let handle;
+  try {
+    handle = await fs.open(file, 'r');
+    return false;
+  } catch (error) {
+    return Boolean(error && ['EBUSY', 'EPERM', 'EACCES'].includes(error.code));
+  } finally {
+    await handle?.close().catch(() => {});
+  }
 }
 
 async function listDirectory(dirPath) {
@@ -116,29 +83,45 @@ async function listDirectory(dirPath) {
 
     const entries = await fs.readdir(resolved, { withFileTypes: true });
     const folders = [];
-    const files = [];
+    const fileNames = [];
 
     for (const entry of entries) {
-      if (entry.name === '.' || entry.name === '..') continue;
-      const full = path.join(resolved, entry.name);
       if (entry.isSymbolicLink()) continue;
+      const full = path.join(resolved, entry.name);
       if (entry.isDirectory()) folders.push({ name: entry.name, path: full });
-      else if (entry.isFile()) files.push(full);
+      else if (entry.isFile()) fileNames.push({ name: entry.name, path: full });
     }
 
-    folders.sort((a, b) => a.name.localeCompare(b.name, undefined, { sensitivity: 'base', numeric: true }));
-
-    let directFileBytes = 0;
-    for (let index = 0; index < files.length; index += 64) {
-      const slice = files.slice(index, index + 64);
-      const sizes = await Promise.all(
-        slice.map((file) => fs.lstat(file).then((item) => (item.isFile() ? item.size : 0)).catch(() => 0))
+    const files = [];
+    for (let index = 0; index < fileNames.length; index += 64) {
+      const slice = fileNames.slice(index, index + 64);
+      const infos = await Promise.all(
+        slice.map(async (f) => {
+          try {
+            const s = await fs.stat(f.path);
+            const { kind, ext } = preview.classify(f.name);
+            return {
+              ...f,
+              size: s.size,
+              modified: s.mtimeMs,
+              kind,
+              ext,
+              readonly: (s.mode & 0o200) === 0,
+              locked: false,
+            };
+          } catch (error) {
+            const { kind, ext } = preview.classify(f.name);
+            return { ...f, size: null, modified: 0, kind, ext, readonly: false, locked: true };
+          }
+        })
       );
-      for (const size of sizes) directFileBytes += size;
+      files.push(...infos);
     }
+
+    for (const f of folders) allow(f.path);
+    for (const f of files) allow(f.path);
 
     const parent = path.dirname(resolved);
-
     return {
       ok: true,
       path: resolved,
@@ -146,11 +129,12 @@ async function listDirectory(dirPath) {
       parent: parent !== resolved ? parent : null,
       ancestry: ancestry(resolved),
       folders,
+      files,
       fileCount: files.length,
-      directFileBytes,
+      directFileBytes: files.reduce((sum, f) => sum + (f.size || 0), 0),
     };
   } catch (error) {
-    console.error('list-directory', error);
+    console.error('list-directory', error.code || error);
     return { ok: false, message: explain(error) };
   }
 }
@@ -165,6 +149,7 @@ function serveExport() {
     }
     return net.fetch(pathToFileURL(target).toString());
   });
+  protocol.handle('stark-file', media.handleFileRequest);
 }
 
 function createWindow() {
@@ -175,6 +160,7 @@ function createWindow() {
     minHeight: 680,
     backgroundColor: '#050607',
     title: 'Stark File Manager',
+    icon: fsSync.existsSync(ICON) ? nativeImage.createFromPath(ICON) : undefined,
     autoHideMenuBar: true,
     titleBarStyle: 'hidden',
     titleBarOverlay: { color: '#050607', symbolColor: '#8b959c', height: 36 },
@@ -184,6 +170,7 @@ function createWindow() {
       nodeIntegration: false,
       sandbox: true,
       spellcheck: false,
+      plugins: true,
     },
   });
 
@@ -199,10 +186,11 @@ function createWindow() {
     console.error('render-process-gone', details);
   });
   mainWindow.webContents.on('console-message', (_event, level, message, line, sourceId) => {
-    if (level >= 2) console.error(`[renderer] ${message} (${sourceId}:${line})`);
+    if (level >= 2 && !/THREE\.Clock/.test(message)) console.error(`[renderer] ${message} (${sourceId}:${line})`);
   });
-  mainWindow.webContents.on('did-finish-load', () => {
-    console.log('loaded', page);
+  mainWindow.webContents.setWindowOpenHandler(() => ({ action: 'deny' }));
+  mainWindow.webContents.on('will-navigate', (event, url) => {
+    if (!url.startsWith(page.split('#')[0].replace(/index\.html$/, ''))) event.preventDefault();
   });
 
   mainWindow.loadURL(page).catch((error) => {
@@ -231,18 +219,160 @@ if (!gotLock) {
   app.on('window-all-closed', () => {
     if (process.platform !== 'darwin') app.quit();
   });
-
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) createWindow();
   });
 }
 
-ipcMain.handle('bootstrap', () => readSystemRoots());
+function known(name, fallback) {
+  try {
+    return app.getPath(name);
+  } catch {
+    return fallback;
+  }
+}
+
+ipcMain.handle('bootstrap', () => {
+  const home = os.homedir();
+  const desktop = known('desktop', path.join(home, 'Desktop'));
+  const common = [
+    { name: 'Desktop', path: desktop },
+    { name: 'Documents', path: known('documents', path.join(home, 'Documents')) },
+    { name: 'Downloads', path: known('downloads', path.join(home, 'Downloads')) },
+    { name: 'Pictures', path: known('pictures', path.join(home, 'Pictures')) },
+    { name: 'Videos', path: known('videos', path.join(home, 'Videos')) },
+    { name: 'Music', path: known('music', path.join(home, 'Music')) },
+  ].filter((c) => fsSync.existsSync(c.path));
+  return { home, desktop, common, drives: [] };
+});
+
+/** Lock checks run after a listing is on screen so opening a folder never waits on them. */
+ipcMain.handle('probe-locks', async (_event, paths) => {
+  if (!Array.isArray(paths)) return [];
+  const list = paths.filter(isAllowed).slice(0, LOCK_PROBE_LIMIT);
+  const locked = [];
+  for (let i = 0; i < list.length; i += 32) {
+    const slice = list.slice(i, i + 32);
+    const flags = await Promise.all(slice.map(probeLocked));
+    flags.forEach((flag, j) => flag && locked.push(slice[j]));
+  }
+  return locked;
+});
+
+/** Pinned items: confirm they still exist and make them readable by the stage. */
+ipcMain.handle('stat-paths', async (_event, paths) => {
+  if (!Array.isArray(paths)) return [];
+  return Promise.all(
+    paths.slice(0, 200).map(async (p) => {
+      const resolved = assertAbsolute(p);
+      if (!resolved) return { path: p, exists: false };
+      try {
+        const s = await fs.stat(resolved);
+        allow(resolved);
+        const { kind, ext } = preview.classify(path.basename(resolved));
+        return {
+          path: resolved,
+          exists: true,
+          type: s.isDirectory() ? 'dir' : 'file',
+          name: path.basename(resolved) || resolved,
+          size: s.isDirectory() ? null : s.size,
+          modified: s.mtimeMs,
+          kind,
+          ext,
+        };
+      } catch (error) {
+        return { path: resolved, exists: false, locked: Boolean(error && ['EPERM', 'EACCES'].includes(error.code)) };
+      }
+    })
+  );
+});
+
+let searchJob = 0;
+ipcMain.handle('search', (event, payload) => {
+  const id = ++searchJob;
+  const root = assertAbsolute(payload?.root);
+  const query = String(payload?.query || '').trim();
+  if (!root || query.length < 2) return { ok: false };
+  const sender = event.sender;
+  const isActive = () => id === searchJob && !sender.isDestroyed();
+  searchTree(root, query, isActive, (batch, done, scanned) => {
+    for (const item of batch) allow(item.path);
+    if (isActive()) sender.send('search-results', { id, batch, done, scanned });
+  });
+  return { ok: true, id };
+});
+ipcMain.handle('search-cancel', () => {
+  searchJob += 1;
+  return true;
+});
+
+ipcMain.handle('shell-run', (event, payload) => {
+  const sender = event.sender;
+  return runShell({
+    id: payload?.id,
+    command: payload?.command,
+    cwd: payload?.cwd,
+    onEvent: (message) => {
+      if (!sender.isDestroyed()) sender.send('shell-output', message);
+    },
+  });
+});
+ipcMain.handle('shell-cancel', () => {
+  stopShell();
+  return true;
+});
+
+ipcMain.handle('show-in-folder', (_event, target) => {
+  if (!isAllowed(target)) return { ok: false, message: 'That item is not available.' };
+  shell.showItemInFolder(target);
+  return { ok: true };
+});
+
+ipcMain.handle('copy-text', (_event, text) => {
+  clipboard.writeText(String(text || '').slice(0, 4096));
+  return { ok: true };
+});
+
+const BAD_NAME = /[<>:"/\\|?*\x00-\x1f]|^\.+$|[ .]$/;
+ipcMain.handle('rename', async (_event, target, newName) => {
+  if (!isAllowed(target)) return { ok: false, message: 'That item is not available.' };
+  const name = String(newName || '').trim();
+  if (!name || name.length > 240 || BAD_NAME.test(name)) return { ok: false, message: 'That name is not allowed.' };
+  const source = path.resolve(target);
+  const destination = path.join(path.dirname(source), name);
+  if (destination === source) return { ok: true, path: destination };
+  // A case-only rename targets the same file on Windows, so only check for clashes otherwise.
+  const caseOnly = destination.toLowerCase() === source.toLowerCase();
+  try {
+    if (!caseOnly && fsSync.existsSync(destination)) throw Object.assign(new Error('exists'), { code: 'EEXIST' });
+    await fs.rename(source, destination);
+    allow(destination);
+    return { ok: true, path: destination };
+  } catch (error) {
+    if (error.code === 'EEXIST') return { ok: false, message: 'Something with that name already exists.' };
+    if (['EBUSY', 'EPERM', 'EACCES'].includes(error.code)) return { ok: false, message: 'It is locked or in use.' };
+    return { ok: false, message: 'Rename failed.' };
+  }
+});
+
+ipcMain.handle('trash', async (_event, target) => {
+  if (!isAllowed(target)) return { ok: false, message: 'That item is not available.' };
+  try {
+    await shell.trashItem(target);
+    return { ok: true };
+  } catch {
+    return { ok: false, message: 'Could not move it to the Recycle Bin (it may be locked).' };
+  }
+});
+ipcMain.handle('volumes', () => volumes());
 ipcMain.handle('list-directory', (_event, dirPath) => listDirectory(dirPath));
 ipcMain.handle('preview-folder', (_event, dirPath) => preview.previewFolder(dirPath));
-ipcMain.handle('thumbnail', (_event, filePath) => preview.thumbnail(filePath));
+ipcMain.handle('thumbnail', (_event, filePath, size) => preview.thumbnail(filePath, size));
+ipcMain.handle('read-text', (_event, filePath) => media.readText(filePath));
+ipcMain.handle('subtitles', (_event, filePath) => media.subtitlesFor(filePath));
+
 ipcMain.handle('open-file', async (_event, filePath) => {
-  if (!preview.isAllowed(filePath)) return { ok: false, message: 'That file is not available.' };
+  if (!isAllowed(filePath)) return { ok: false, message: 'That file is not available.' };
   const error = await shell.openPath(filePath);
   return error ? { ok: false, message: 'No app could open that file.' } : { ok: true };
 });
@@ -262,14 +392,28 @@ ipcMain.handle('open-in-explorer', async (_event, dirPath) => {
   }
 });
 
+ipcMain.handle('transfer-start', async (event, payload) => {
+  const sources = Array.isArray(payload?.sources) ? payload.sources.filter(isAllowed).map((p) => path.resolve(p)) : [];
+  if (!sources.length) return { ok: false, message: 'Nothing to transfer.' };
+
+  if (!lastVolumes.length) await volumes();
+  const volume = lastVolumes.find((v) => v.id === payload?.volumeId);
+  if (!volume) return { ok: false, message: 'That volume is not available.' };
+  if (!volume.connected) return { ok: false, message: 'That volume is disconnected.' };
+
+  const sender = event.sender;
+  return startTransfer({ sources, volume: volume.path, label: volume.label || volume.id }, (message) => {
+    if (!sender.isDestroyed()) sender.send('transfer-progress', message);
+  });
+});
+ipcMain.handle('transfer-cancel', () => cancelTransfer());
+
 ipcMain.on('measure-start', (event, payload) => {
   const kind = payload && payload.kind;
   const token = payload && payload.token;
   const folders = payload && payload.folders;
 
-  if ((kind !== 'inside' && kind !== 'desktop') || typeof token !== 'number' || !Array.isArray(folders)) {
-    return;
-  }
+  if ((kind !== 'inside' && kind !== 'rail') || typeof token !== 'number' || !Array.isArray(folders)) return;
 
   const safeFolders = folders
     .filter((folder) => folder && typeof folder.path === 'string' && path.isAbsolute(folder.path))

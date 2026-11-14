@@ -1,6 +1,7 @@
 const fs = require('fs/promises');
 const path = require('path');
 const { nativeImage } = require('electron');
+const { allow, isAllowed } = require('./access');
 
 const MAX_SHEETS = 14;
 const SNIPPET_BYTES = 3200;
@@ -23,10 +24,6 @@ for (const [kind, exts] of Object.entries(KINDS)) for (const ext of exts) KIND_O
 
 // Lower = shown first. Visual files make the best "sheets".
 const PRIORITY = { image: 0, pdf: 1, video: 2, code: 3, doc: 3, file: 5 };
-
-/** Paths handed to the renderer; only these may be thumbnailed or opened. */
-const allowed = new Set();
-const key = (p) => path.resolve(p).toLowerCase();
 
 function classify(name) {
   const lower = name.toLowerCase();
@@ -81,7 +78,7 @@ async function previewFolder(dirPath) {
 
     await Promise.all(
       picked.map(async (f) => {
-        allowed.add(key(f.path));
+        allow(f.path);
         if (f.kind === 'code' || f.kind === 'doc') f.snippet = await readSnippet(f.path);
       })
     );
@@ -93,12 +90,13 @@ async function previewFolder(dirPath) {
   }
 }
 
-async function thumbnail(filePath) {
-  if (typeof filePath !== 'string' || !allowed.has(key(filePath))) return null;
+async function thumbnail(filePath, size = 560) {
+  size = Math.max(64, Math.min(1600, Number(size) || 560));
+  if (!isAllowed(filePath)) return null;
   const { kind, ext } = classify(filePath);
 
   try {
-    const image = await nativeImage.createThumbnailFromPath(filePath, { width: 560, height: 720 });
+    const image = await nativeImage.createThumbnailFromPath(filePath, { width: size, height: Math.round(size * 1.3) });
     if (!image.isEmpty()) return image.toDataURL();
   } catch {
     // no shell thumbnail handler for this type; fall through
@@ -118,8 +116,4 @@ async function thumbnail(filePath) {
   return null;
 }
 
-function isAllowed(filePath) {
-  return typeof filePath === 'string' && allowed.has(key(filePath));
-}
-
-module.exports = { previewFolder, thumbnail, isAllowed };
+module.exports = { previewFolder, thumbnail, classify };

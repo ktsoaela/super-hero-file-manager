@@ -1,16 +1,18 @@
 'use client';
 
 import { Canvas, useFrame, useThree } from '@react-three/fiber';
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import * as THREE from 'three';
-import { formatBytes, maxBytes, toCode } from '../lib/format';
+import { formatBytes, maxBytes, statusOf, tabColor, toCode } from '../lib/format';
 
-const PALETTE = ['#1d3fc4', '#e2911a', '#e3b21c', '#e9c42a', '#c3212d', '#1aa6d8', '#5b4bd0', '#2f9f6a'];
 const VISIBLE = 9;
+const AHEAD = 2; // hidden cards mounted past the visible tail so scrolling never builds on demand
 const W = 1.6;
 const H = 1.2;
 const T = 0.07;
 const TURN = 0.82;
+const FACE_W = 512;
+const FACE_H = 384;
 const pad = (n) => String(n).padStart(3, '0');
 const reduceMotion =
   typeof window !== 'undefined' && window.matchMedia?.('(prefers-reduced-motion: reduce)').matches;
@@ -40,24 +42,76 @@ function fitLines(g, text, width, maxLines) {
 function texture(canvas) {
   const tex = new THREE.CanvasTexture(canvas);
   tex.colorSpace = THREE.SRGBColorSpace;
-  tex.anisotropy = 8;
+  tex.generateMipmaps = false;
+  tex.minFilter = THREE.LinearFilter;
+  tex.magFilter = THREE.LinearFilter;
+  tex.anisotropy = 4;
   return tex;
 }
 
-function drawFace({ name, bytes, error, color, rank, share }) {
+/* ───────── texture cache: every face/tag is drawn once and reused ───────── */
+
+const CACHE_MAX = 160;
+const cache = new Map();
+
+function cached(key, draw) {
+  const hit = cache.get(key);
+  if (hit) {
+    cache.delete(key);
+    cache.set(key, hit);
+    return hit;
+  }
+  const tex = draw();
+  cache.set(key, tex);
+  if (cache.size > CACHE_MAX) {
+    const [oldKey, old] = cache.entries().next().value;
+    cache.delete(oldKey);
+    // Safe even if still on screen: three re-uploads a disposed texture on next use.
+    old.dispose();
+  }
+  return tex;
+}
+
+function drawLock(g, x, y) {
+  g.save();
+  g.strokeStyle = '#ff5a5f';
+  g.fillStyle = '#c3212d';
+  g.lineWidth = 6;
+  g.beginPath();
+  g.arc(x + 18, y + 15, 12, Math.PI, 0);
+  g.stroke();
+  g.fillRect(x, y + 15, 36, 29);
+  g.fillStyle = '#fff';
+  g.fillRect(x + 15, y + 23, 5, 11);
+  g.restore();
+}
+
+function faceKey(e, color, dark) {
+  return `f|${e.path}|${e.bytes}|${e.error ? 1 : 0}|${e.locked ? 1 : 0}|${statusOf(e)}|${color}|${dark ? 1 : 0}`;
+}
+
+function drawFace(entry, color, dark) {
+  const { name, bytes, error, locked, kind, ext } = entry;
+  const isFile = entry.type === 'file';
+  const status = statusOf(entry);
   const c = document.createElement('canvas');
-  c.width = 640;
-  c.height = 480;
+  c.width = FACE_W;
+  c.height = FACE_H;
   const g = c.getContext('2d');
 
   const bg = g.createLinearGradient(0, 0, c.width, c.height);
-  bg.addColorStop(0, 'rgba(98,102,110,0.94)');
-  bg.addColorStop(0.55, 'rgba(58,62,69,0.95)');
-  bg.addColorStop(1, 'rgba(32,35,40,0.96)');
+  if (dark) {
+    bg.addColorStop(0, 'rgba(118,128,140,0.95)');
+    bg.addColorStop(0.55, 'rgba(74,82,94,0.95)');
+    bg.addColorStop(1, 'rgba(46,52,62,0.96)');
+  } else {
+    bg.addColorStop(0, 'rgba(98,102,110,0.94)');
+    bg.addColorStop(0.55, 'rgba(58,62,69,0.95)');
+    bg.addColorStop(1, 'rgba(32,35,40,0.96)');
+  }
   g.fillStyle = bg;
   g.fillRect(0, 0, c.width, c.height);
 
-  // faint scanlines + top sheen, like backlit smoked glass
   g.fillStyle = 'rgba(255,255,255,0.025)';
   for (let y = 0; y < c.height; y += 4) g.fillRect(0, y, c.width, 1);
   const sheen = g.createLinearGradient(0, 0, 0, c.height * 0.45);
@@ -66,76 +120,104 @@ function drawFace({ name, bytes, error, color, rank, share }) {
   g.fillStyle = sheen;
   g.fillRect(0, 0, c.width, c.height * 0.45);
 
-  g.strokeStyle = 'rgba(255,255,255,0.28)';
-  g.lineWidth = 4;
-  g.strokeRect(2, 2, c.width - 4, c.height - 4);
+  g.strokeStyle = dark ? 'rgba(170,230,245,0.45)' : 'rgba(255,255,255,0.28)';
+  g.lineWidth = 3;
+  g.strokeRect(1.5, 1.5, c.width - 3, c.height - 3);
+
+  if (isFile) {
+    g.fillStyle = 'rgba(255,255,255,0.22)';
+    g.beginPath();
+    g.moveTo(c.width - 56, 0);
+    g.lineTo(c.width, 56);
+    g.lineTo(c.width - 56, 56);
+    g.closePath();
+    g.fill();
+    g.fillStyle = dark ? '#2b3138' : '#1d2024';
+    g.beginPath();
+    g.moveTo(c.width - 56, 0);
+    g.lineTo(c.width, 0);
+    g.lineTo(c.width, 56);
+    g.closePath();
+    g.fill();
+  }
 
   g.textBaseline = 'top';
   g.fillStyle = '#f5f7f9';
-  g.shadowColor = 'rgba(0,0,0,0.35)';
-  g.shadowBlur = 6;
-  g.font = '700 72px Bahnschrift, "Segoe UI", sans-serif';
-  const lines = fitLines(g, toCode(name), c.width - 90, 2);
-  lines.forEach((line, i) => g.fillText(line, 44, 44 + i * 78));
-  g.shadowBlur = 0;
+  g.font = '700 58px Bahnschrift, "Segoe UI", sans-serif';
+  const lines = fitLines(g, toCode(name), c.width - 72, 2);
+  lines.forEach((line, i) => g.fillText(line, 35, 35 + i * 62));
 
-  g.font = '600 42px "Cascadia Mono", Consolas, monospace';
+  g.font = '600 34px "Cascadia Mono", Consolas, monospace';
   g.fillStyle = 'rgba(232,238,242,0.8)';
-  const sizeText = error ? 'NO_ACCESS' : bytes == null ? 'MEASURING…' : formatBytes(bytes).replace(' ', '_');
-  g.fillText(sizeText, 44, 62 + lines.length * 78);
+  const sizeText =
+    error || locked ? 'LOCKED' : bytes == null ? (entry.where != null ? 'FOLDER' : 'MEASURING…') : formatBytes(bytes).replace(' ', '_');
+  g.fillText(sizeText, 35, 50 + lines.length * 62);
+  if (isFile || status !== 'normal') {
+    g.font = '500 22px "Cascadia Mono", Consolas, monospace';
+    g.fillStyle = 'rgba(232,238,242,0.55)';
+    const labels = { sensitive: 'SENSITIVE', readonly: 'READ_ONLY', locked: 'LOCKED' };
+    const kindText = isFile ? `FILE · ${toCode(ext || kind || '')}` : 'FOLDER';
+    g.fillText(status !== 'normal' ? `${kindText} · ${labels[status]}` : kindText, 35, 93 + lines.length * 62);
+  }
+  if (error || locked) drawLock(g, c.width - 184, c.height - 106);
 
-  // size share meter
-  const meterY = c.height - 128;
+  // meter track; the fill is a separate mesh so size changes never redraw this canvas
   g.fillStyle = 'rgba(255,255,255,0.12)';
-  g.fillRect(44, meterY, 380, 6);
-  g.fillStyle = error ? '#6d7177' : color;
-  g.fillRect(44, meterY, Math.max(4, 380 * (share || 0)), 6);
+  g.fillRect(35, c.height - 102, 304, 5);
 
-  g.font = '500 30px "Cascadia Mono", Consolas, monospace';
-  g.fillStyle = 'rgba(232,238,242,0.5)';
-  g.fillText(`RANK_${pad(rank)}`, 44, c.height - 86);
-
-  g.fillStyle = error ? '#6d7177' : color;
-  g.fillRect(c.width - 118, c.height - 132, 70, 84);
+  g.fillStyle = color;
+  g.fillRect(c.width - 94, c.height - 106, 56, 67);
   g.fillStyle = 'rgba(255,255,255,0.25)';
-  g.fillRect(c.width - 118, c.height - 132, 70, 6);
+  g.fillRect(c.width - 94, c.height - 106, 56, 5);
   return texture(c);
 }
 
-function drawTag({ name, color, rank }) {
+function drawTag(name, color, rank) {
   const c = document.createElement('canvas');
-  c.width = 640;
-  c.height = 72;
+  c.width = 512;
+  c.height = 58;
   const g = c.getContext('2d');
-  g.font = '600 38px "Cascadia Mono", Consolas, monospace';
+  g.font = '600 30px "Cascadia Mono", Consolas, monospace';
   const label = `${pad(rank)}_${toCode(name)}`;
-  const text = fitLines(g, label, c.width - 40, 1)[0] || label;
-  const width = Math.min(c.width, g.measureText(text).width + 36);
+  const text = fitLines(g, label, c.width - 32, 1)[0] || label;
+  const width = Math.min(c.width, g.measureText(text).width + 28);
   g.fillStyle = color;
   g.fillRect(0, 0, width, c.height);
   g.fillStyle = 'rgba(255,255,255,0.22)';
-  g.fillRect(0, 0, width, 4);
+  g.fillRect(0, 0, width, 3);
   g.fillStyle = '#ffffff';
   g.textBaseline = 'middle';
-  g.fillText(text, 18, c.height / 2 + 2);
+  g.fillText(text, 14, c.height / 2 + 2);
   return texture(c);
 }
 
-const edgeGeometry = new THREE.EdgesGeometry(new THREE.BoxGeometry(W, H, T));
+const faceFor = (entry, color, dark) => cached(faceKey(entry, color, dark), () => drawFace(entry, color, dark));
+const tagFor = (entry, color, rank) => cached(`t|${entry.name}|${color}|${rank}`, () => drawTag(entry.name, color, rank));
 
-function Plate({ folder, slot, rank, color, scale, share, hovered, onHover, onPick, onOpen }) {
+/* shared geometry: built once for every card */
+const geo = {
+  edge: new THREE.EdgesGeometry(new THREE.BoxGeometry(W, H, T)),
+  body: new THREE.BoxGeometry(W, H, T),
+  face: new THREE.PlaneGeometry(W, H),
+  back: new THREE.BoxGeometry(W * 1.06, H * 1.08, 0.025),
+  tab: new THREE.BoxGeometry(0.5, 0.14, 0.025),
+  tag: new THREE.PlaneGeometry(1.2, 0.135),
+  meter: new THREE.PlaneGeometry(1, 0.016),
+};
+const METER_W = (304 / FACE_W) * W;
+const METER_X = -W / 2 + (35 / FACE_W) * W;
+const METER_Y = H / 2 - ((FACE_H - 99.5) / FACE_H) * H;
+
+const Plate = memo(function Plate({ entry, index, slot, rank, scale, share, hovered, dark, onHover, onPick, onOpen, onMenu }) {
   const group = useRef();
   const edge = useRef();
   const materials = useRef(new Set());
   const fade = useRef(0);
+  const isFile = entry.type === 'file';
+  const color = tabColor(entry);
 
-  const face = useMemo(
-    () => drawFace({ name: folder.name, bytes: folder.bytes, error: folder.error, color, rank, share }),
-    [folder.name, folder.bytes, folder.error, color, rank, share]
-  );
-  const tag = useMemo(() => drawTag({ name: folder.name, color, rank }), [folder.name, color, rank]);
-  useEffect(() => () => face.dispose(), [face]);
-  useEffect(() => () => tag.dispose(), [tag]);
+  const face = faceFor(entry, color, dark);
+  const tag = tagFor(entry, color, rank);
 
   const start = useMemo(() => {
     const p = slotPose(VISIBLE + 1);
@@ -146,17 +228,21 @@ function Plate({ folder, slot, rank, color, scale, share, hovered, onHover, onPi
     const node = group.current;
     if (!node) return;
     const pose = slotPose(slot);
-    const k = reduceMotion ? 1 : 1 - Math.exp(-dt * 7);
+    const k = reduceMotion ? 1 : 1 - Math.exp(-Math.min(dt, 0.05) * 9);
     const lift = (hovered ? 0.07 : 0) + (slot === 0 && !reduceMotion ? Math.sin(state.clock.elapsedTime * 1.4) * 0.015 : 0);
-    node.position.x += (pose.x - node.position.x) * k;
-    node.position.y += (pose.y + lift - node.position.y) * k;
-    node.position.z += (pose.z - node.position.z) * k;
+    const p = node.position;
+    p.x += (pose.x - p.x) * k;
+    p.y += (pose.y + lift - p.y) * k;
+    p.z += (pose.z - p.z) * k;
     const target = hovered ? scale * 1.03 : scale;
     node.scale.setScalar(node.scale.x + (target - node.scale.x) * k);
-    fade.current += (pose.fade - fade.current) * k;
-    materials.current.forEach((m) => {
-      m.opacity = m.userData.base * fade.current;
-    });
+    const f = fade.current + (pose.fade - fade.current) * k;
+    if (Math.abs(f - fade.current) > 0.0005) {
+      fade.current = f;
+      materials.current.forEach((m) => {
+        m.opacity = m.userData.base * f;
+      });
+    }
     if (edge.current) {
       const glow = slot === 0 ? 0.75 + Math.sin(state.clock.elapsedTime * 3) * 0.2 : hovered ? 0.6 : 0;
       edge.current.opacity += (glow * fade.current - edge.current.opacity) * k;
@@ -164,11 +250,17 @@ function Plate({ folder, slot, rank, color, scale, share, hovered, onHover, onPi
     node.visible = fade.current > 0.01;
   });
 
-  const keep = (base) => (m) => {
-    if (!m) return;
-    m.userData.base = base;
-    materials.current.add(m);
-  };
+  const keep = useCallback(
+    (base) => (m) => {
+      if (!m) return;
+      m.userData.base = base;
+      m.opacity = base * fade.current;
+      materials.current.add(m);
+    },
+    []
+  );
+
+  const backColor = dark ? '#6b7783' : '#aab1b7';
 
   return (
     <group
@@ -178,47 +270,59 @@ function Plate({ folder, slot, rank, color, scale, share, hovered, onHover, onPi
       rotation={[0, TURN, 0]}
       onClick={(e) => {
         e.stopPropagation();
-        if (slot >= 0 && slot < VISIBLE) onPick(folder, slot);
+        if (slot >= 0 && slot < VISIBLE) onPick(index, slot);
       }}
       onDoubleClick={(e) => {
         e.stopPropagation();
-        if (slot === 0) onOpen(folder.path);
+        if (slot === 0) onOpen(index);
+      }}
+      onContextMenu={(e) => {
+        e.stopPropagation();
+        e.nativeEvent.preventDefault();
+        if (slot >= 0 && slot < VISIBLE) onMenu(index, e.nativeEvent.clientX, e.nativeEvent.clientY);
       }}
       onPointerOver={(e) => {
         e.stopPropagation();
-        onHover(folder.path);
+        onHover(entry.path);
       }}
       onPointerOut={() => onHover(null)}
     >
-      {/* folder back cover + tab, peeking out behind the plate */}
-      <mesh position={[-0.12, 0.08, -0.16]}>
-        <boxGeometry args={[W * 1.06, H * 1.08, 0.025]} />
-        <meshStandardMaterial ref={keep(0.42)} color="#aab1b7" transparent depthWrite={false} roughness={0.3} metalness={0.2} />
+      {!isFile && (
+        <>
+          <mesh geometry={geo.back} position={[-0.12, 0.08, -0.16]}>
+            <meshStandardMaterial ref={keep(0.42)} color={backColor} transparent depthWrite={false} roughness={0.3} metalness={0.2} />
+          </mesh>
+          <mesh geometry={geo.tab} position={[-W / 2 + 0.24, H * 0.54 + 0.14, -0.16]}>
+            <meshStandardMaterial ref={keep(0.42)} color={backColor} transparent depthWrite={false} roughness={0.3} metalness={0.2} />
+          </mesh>
+        </>
+      )}
+      <mesh geometry={geo.body}>
+        <meshStandardMaterial ref={keep(0.9)} color={dark ? '#4a535d' : '#30343a'} transparent roughness={0.25} metalness={0.3} />
       </mesh>
-      <mesh position={[-W / 2 + 0.24, H * 0.54 + 0.14, -0.16]}>
-        <boxGeometry args={[0.5, 0.14, 0.025]} />
-        <meshStandardMaterial ref={keep(0.42)} color="#aab1b7" transparent depthWrite={false} roughness={0.3} metalness={0.2} />
-      </mesh>
-      <mesh>
-        <boxGeometry args={[W, H, T]} />
-        <meshStandardMaterial ref={keep(0.9)} color="#30343a" transparent roughness={0.25} metalness={0.3} />
-      </mesh>
-      <mesh position={[0, 0, T / 2 + 0.002]}>
-        <planeGeometry args={[W, H]} />
+      <mesh geometry={geo.face} position={[0, 0, T / 2 + 0.002]}>
         <meshBasicMaterial ref={keep(1)} map={face} transparent toneMapped={false} />
       </mesh>
-      <lineSegments geometry={edgeGeometry}>
+      {share > 0 && (
+        <mesh
+          geometry={geo.meter}
+          position={[METER_X + (METER_W * share) / 2, METER_Y, T / 2 + 0.004]}
+          scale={[METER_W * share, 1, 1]}
+        >
+          <meshBasicMaterial ref={keep(1)} color={color} transparent toneMapped={false} />
+        </mesh>
+      )}
+      <lineSegments geometry={geo.edge}>
         <lineBasicMaterial ref={edge} color="#5fd4ee" transparent opacity={0} depthWrite={false} toneMapped={false} />
       </lineSegments>
       <group position={[W * 0.1, -H / 2 - 0.15, 0.06]} rotation={[0, -TURN, 0]}>
-        <mesh position={[0.6, 0, 0]}>
-          <planeGeometry args={[1.2, 0.135]} />
+        <mesh geometry={geo.tag} position={[0.6, 0, 0]}>
           <meshBasicMaterial ref={keep(1)} map={tag} transparent toneMapped={false} depthWrite={false} />
         </mesh>
       </group>
     </group>
   );
-}
+});
 
 /** Keeps the stack framed for any panel size and adds a slight pointer parallax. */
 function Rig({ children, shifted }) {
@@ -231,9 +335,10 @@ function Rig({ children, shifted }) {
 
   useFrame((state, dt) => {
     if (!group.current) return;
-    const k = 1 - Math.exp(-dt * 3);
+    const d = Math.min(dt, 0.05);
+    const k = 1 - Math.exp(-d * 3);
     const g = group.current.position;
-    g.x += (targetX - g.x) * (reduceMotion ? 1 : 1 - Math.exp(-dt * 6));
+    g.x += (targetX - g.x) * (reduceMotion ? 1 : 1 - Math.exp(-d * 7));
     g.y = baseY;
     const px = reduceMotion ? 0 : state.pointer.x;
     const py = reduceMotion ? 0 : state.pointer.y;
@@ -250,11 +355,33 @@ function Rig({ children, shifted }) {
   );
 }
 
-export default function FolderStack({ folders, focusIndex, shifted, onFocus, onPreview, onOpen }) {
+/** Draws textures for the next cards during idle time so they are ready before they scroll in. */
+function usePrewarm(entries, focusIndex, dark) {
+  useEffect(() => {
+    if (typeof window === 'undefined') return undefined;
+    const idle = window.requestIdleCallback || ((fn) => setTimeout(() => fn({ timeRemaining: () => 8 }), 50));
+    const cancel = window.cancelIdleCallback || clearTimeout;
+    const queue = entries.slice(focusIndex, focusIndex + VISIBLE + 14).map((e, i) => [e, focusIndex + i]);
+    let handle = idle(function work(deadline) {
+      while (queue.length && deadline.timeRemaining() > 4) {
+        const [entry, index] = queue.shift();
+        const color = tabColor(entry);
+        faceFor(entry, color, dark);
+        tagFor(entry, color, index + 1);
+      }
+      if (queue.length) handle = idle(work);
+    });
+    return () => cancel(handle);
+  }, [entries, focusIndex, dark]);
+}
+
+export default function FolderStack({ folders: entries, focusIndex, shifted, dark, onFocus, onPreview, onOpen, onMenu }) {
   const [hovered, setHovered] = useState(null);
-  const max = maxBytes(folders);
+  const max = maxBytes(entries);
   const first = Math.max(0, focusIndex - 2);
-  const shown = folders.slice(first, focusIndex + VISIBLE + 1);
+  const shown = entries.slice(first, focusIndex + VISIBLE + AHEAD);
+
+  usePrewarm(entries, focusIndex, dark);
 
   useEffect(() => {
     document.body.style.cursor = hovered ? 'pointer' : '';
@@ -263,11 +390,22 @@ export default function FolderStack({ folders, focusIndex, shifted, onFocus, onP
     };
   }, [hovered]);
 
+  // Stable handlers so memoised cards only re-render when their own data changes.
+  const latest = useRef({});
+  latest.current = { entries, onFocus, onPreview, onOpen, onMenu };
+  const pick = useCallback((index, slot) => {
+    const l = latest.current;
+    if (slot === 0) l.onPreview(l.entries[index]);
+    else l.onFocus(index);
+  }, []);
+  const open = useCallback((index) => latest.current.onOpen(latest.current.entries[index]), []);
+  const menu = useCallback((index, x, y) => latest.current.onMenu?.(latest.current.entries[index], x, y), []);
+
   return (
     <Canvas
       className="stack-canvas"
-      dpr={[1, 2]}
-      gl={{ antialias: true, alpha: true }}
+      dpr={[1, 1.5]}
+      gl={{ antialias: true, alpha: true, powerPreference: 'high-performance' }}
       camera={{ position: [0.4, 0.9, 9], fov: 30 }}
       onPointerMissed={() => setHovered(null)}
     >
@@ -275,22 +413,24 @@ export default function FolderStack({ folders, focusIndex, shifted, onFocus, onP
       <directionalLight position={[-5, 6, 7]} intensity={1.6} />
       <directionalLight position={[6, -2, 3]} intensity={0.5} color="#bfe3f0" />
       <Rig shifted={shifted}>
-        {shown.map((folder, i) => {
+        {shown.map((entry, i) => {
           const index = first + i;
-          const share = max && folder.bytes ? Math.sqrt(folder.bytes / max) : 0;
+          const known = max && entry.bytes ? entry.bytes / max : 0;
           return (
             <Plate
-              key={folder.path}
-              folder={folder}
+              key={entry.path}
+              entry={entry}
+              index={index}
               slot={index - focusIndex}
               rank={index + 1}
-              color={PALETTE[index % PALETTE.length]}
-              scale={folder.bytes == null ? 0.88 : 0.8 + share * 0.22}
-              share={max && folder.bytes ? folder.bytes / max : 0}
-              hovered={hovered === folder.path}
+              scale={entry.bytes == null ? 0.88 : 0.8 + Math.sqrt(known) * 0.22}
+              share={known}
+              hovered={hovered === entry.path}
+              dark={dark}
               onHover={setHovered}
-              onPick={(_, slot) => (slot === 0 ? onPreview() : onFocus(index))}
-              onOpen={onOpen}
+              onPick={pick}
+              onOpen={open}
+              onMenu={menu}
             />
           );
         })}
