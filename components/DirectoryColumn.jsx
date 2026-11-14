@@ -4,10 +4,18 @@ import { useEffect, useMemo, useRef } from 'react';
 import { TrayGlyph } from './Glyphs';
 import { byName, samePath, toCode } from '../lib/format';
 
-function Row({ label, title, active, current, onClick, onDoubleClick, rowRef }) {
+function Row({ label, title, active, current, onClick, onDoubleClick, rowRef, index = 0 }) {
   const className = ['dir-row', active && 'is-active', current && 'is-current'].filter(Boolean).join(' ');
   return (
-    <button ref={rowRef} type="button" className={className} title={title} onClick={onClick} onDoubleClick={onDoubleClick}>
+    <button
+      ref={rowRef}
+      type="button"
+      className={className}
+      style={{ '--i': Math.min(index, 24) }}
+      title={title}
+      onClick={onClick}
+      onDoubleClick={onDoubleClick}
+    >
       <span className="dir-chip">
         <TrayGlyph />
         <span className="dir-code">{label}</span>
@@ -47,13 +55,14 @@ export default function DirectoryColumn({ roots, current, folders, focusPath, on
           {current?.parent && <Row label="▲ PARENT" title={current.parent} onClick={() => onOpen(current.parent)} />}
         </div>
 
-        <div className="dir-group">
+        <div className="dir-group" key={here || 'none'}>
           {alphabetical.length === 0 && <p className="col-empty">NO_SUBFOLDERS</p>}
-          {alphabetical.map((folder) => {
+          {alphabetical.map((folder, index) => {
             const active = samePath(folder.path, focusPath);
             return (
               <Row
                 key={folder.path}
+                index={index}
                 rowRef={active ? activeRef : undefined}
                 label={toCode(folder.name)}
                 title={`${folder.path}\nClick to select · double-click to open`}

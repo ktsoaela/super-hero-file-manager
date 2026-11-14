@@ -7,6 +7,21 @@ import FolderStack from './FolderStack';
 import { useFileSystem } from '../lib/useFileSystem';
 import { formatBytes, knownTotal, samePath, toCode } from '../lib/format';
 
+function Clock() {
+  const [now, setNow] = useState(() => new Date());
+  useEffect(() => {
+    const id = setInterval(() => setNow(new Date()), 1000);
+    return () => clearInterval(id);
+  }, []);
+  const two = (n) => String(n).padStart(2, '0');
+  return (
+    <span className="clock">
+      {now.getFullYear()}.{two(now.getMonth() + 1)}.{two(now.getDate())} · {two(now.getHours())}:{two(now.getMinutes())}:
+      {two(now.getSeconds())}
+    </span>
+  );
+}
+
 export default function FileManager() {
   const fsys = useFileSystem();
   const { current, folders, measuring, openDirectory } = fsys;
@@ -70,7 +85,10 @@ export default function FileManager() {
   return (
     <div className="shell">
       <header className="topbar">
-        <span className="brand">STARK</span>
+        <span className="brand">
+          STARK<span className="brand-sub">INDUSTRIES</span>
+        </span>
+        <span className="topbar-rule" />
         <nav className="crumbs" aria-label="Current path">
           {current?.ancestry.map((part, i) => (
             <span key={part.path} className="crumb-wrap">
@@ -81,10 +99,13 @@ export default function FileManager() {
             </span>
           ))}
         </nav>
+        <span className="spacer" />
+        <Clock />
       </header>
 
       <main className="bezel">
         <div className="glass">
+          <div className="glass-sheen" aria-hidden="true" />
           <DirectoryColumn
             roots={fsys.roots}
             current={current}
@@ -95,9 +116,10 @@ export default function FileManager() {
           />
 
           <section className="col col-stack" aria-label="Folders inside, largest first" onWheel={onWheel}>
-            <p className="stack-code">
+            <p className="stack-code" key={current?.path || 'loading'}>
               {current ? `${toCode(current.name)}_${String(folders.length).padStart(3, '0')}` : 'LOADING'}
             </p>
+            <div className="stack-glow" aria-hidden="true" />
             {folders.length > 0 ? (
               <FolderStack folders={folders} focusIndex={focusIndex} onFocus={(i) => setFocusPath(folders[i].path)} onOpen={openDirectory} />
             ) : (
@@ -137,10 +159,19 @@ export default function FileManager() {
         >
           ❯
         </button>
-        <span className="status">{status}</span>
+        <span className={`status${status === 'READY' ? '' : ' is-busy'}`}>
+          {status}
+          <span className="caret" aria-hidden="true" />
+        </span>
+        {current && (
+          <span className="meta">
+            {String(folders.length).padStart(3, '0')} DIR · {String(current.fileCount ?? 0).padStart(3, '0')} FILE
+          </span>
+        )}
         {fsys.banner && <span className="banner" role="alert">{fsys.banner}</span>}
         <span className="spacer" />
-        <button type="button" className="bar-btn" onClick={fsys.refresh}>
+        <span className="hint">↑↓ SELECT · ENTER OPEN · ⌫ BACK</span>
+        <button type="button" className="bar-btn" title="Refresh (F5)" onClick={fsys.refresh}>
           REFRESH
         </button>
         <button type="button" className="bar-btn" disabled={!current} onClick={() => fsys.openInExplorer(current.path)}>

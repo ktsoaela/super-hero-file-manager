@@ -6,7 +6,10 @@ import { formatBytes, samePath } from '../lib/format';
 export default function DesktopColumn({ folders, measuring, currentPath, onOpen }) {
   return (
     <section className="col col-desk" aria-label="Desktop folders">
-      <p className="desk-title">DESKTOP{measuring ? ' · …' : ''}</p>
+      <p className="desk-title">
+        DESKTOP<span className="desk-count">{folders ? String(folders.length).padStart(2, '0') : '--'}</span>
+        {measuring && <span className="pulse-dot" aria-label="measuring" />}
+      </p>
       <div className="desk-scroll">
         {folders === null && <p className="col-empty light">READING…</p>}
         {folders?.length === 0 && <p className="col-empty light">NO_FOLDERS</p>}
@@ -17,6 +20,7 @@ export default function DesktopColumn({ folders, measuring, currentPath, onOpen 
             <button
               key={folder.path}
               type="button"
+              style={{ '--i': index }}
               className={`desk-item${samePath(folder.path, currentPath) ? ' is-current' : ''}`}
               title={folder.path}
               onClick={() => onOpen(folder.path)}
