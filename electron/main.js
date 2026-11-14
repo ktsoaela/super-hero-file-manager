@@ -12,6 +12,7 @@ const { readVolumes } = require('./volumes');
 const { startTransfer, cancelTransfer } = require('./transfer');
 const { searchTree } = require('./search');
 const { runShell, stopShell } = require('./shell');
+const { windowsHiddenNames, markHidden } = require('./hidden');
 
 const jobs = { inside: 0, rail: 0 };
 const ROOT = path.join(__dirname, '..');
@@ -83,14 +84,16 @@ async function listDirectory(dirPath) {
     if (!stat.isDirectory()) return { ok: false, message: 'That path is not a folder.' };
 
     const entries = await fs.readdir(resolved, { withFileTypes: true });
+    const attrHidden = await windowsHiddenNames(resolved);
     const folders = [];
     const fileNames = [];
 
     for (const entry of entries) {
       if (entry.isSymbolicLink()) continue;
       const full = path.join(resolved, entry.name);
-      if (entry.isDirectory()) folders.push({ name: entry.name, path: full });
-      else if (entry.isFile()) fileNames.push({ name: entry.name, path: full });
+      const hidden = markHidden(entry.name, attrHidden);
+      if (entry.isDirectory()) folders.push({ name: entry.name, path: full, hidden });
+      else if (entry.isFile()) fileNames.push({ name: entry.name, path: full, hidden });
     }
 
     const files = [];

@@ -7,7 +7,7 @@ import FolderStack from './FolderStack';
 import PreviewSpread from './PreviewSpread';
 import FileStage from './FileStage';
 import ContextMenu, { Dialog } from './ContextMenu';
-import { Clock, Screensaver, ThemeSwitch, TransferStatus } from './Chrome';
+import { Clock, HelpSheet, Screensaver, ThemeSwitch, TransferStatus } from './Chrome';
 import { useFileSystem } from '../lib/useFileSystem';
 import { useTerminal } from '../lib/useTerminal';
 import { useTheme } from '../lib/useTheme';
@@ -18,6 +18,15 @@ const parentOf = (p) => {
   const i = Math.max(p.lastIndexOf('\\'), p.lastIndexOf('/'));
   if (i <= 0) return p;
   return i === 2 && p[1] === ':' ? p.slice(0, 3) : p.slice(0, i);
+};
+
+const SHOW_HIDDEN_KEY = 'stark.showHidden';
+const loadShowHidden = () => {
+  try {
+    return window.localStorage.getItem(SHOW_HIDDEN_KEY) === '1';
+  } catch {
+    return false;
+  }
 };
 
 function FindBar({ find, count, search, inputRef, onChange, onToggleDeep, onKey, onClose }) {
@@ -69,6 +78,9 @@ export default function FileManager() {
   const [find, setFind] = useState({ open: false, query: '', deep: false });
   const [menu, setMenu] = useState(null);
   const [dialog, setDialog] = useState(null);
+  const [showHidden, setShowHidden] = useState(loadShowHidden);
+  const [helpOpen, setHelpOpen] = useState(false);
+  const [flash, setFlash] = useState('');
   const lastWheel = useRef(0);
   const findInput = useRef(null);
   const pendingFocus = useRef(null);
@@ -82,14 +94,42 @@ export default function FileManager() {
     setArming(null);
   }, [current?.path]);
 
+  useEffect(() => {
+    if (!flash) return undefined;
+    const id = setTimeout(() => setFlash(''), 1800);
+    return () => clearTimeout(id);
+  }, [flash]);
+
+  const toggleHidden = useCallback(() => {
+    setShowHidden((on) => {
+      const next = !on;
+      try {
+        window.localStorage.setItem(SHOW_HIDDEN_KEY, next ? '1' : '0');
+      } catch {
+        // storage unavailable
+      }
+      setFlash(next ? 'HIDDEN FILES · SHOWN' : 'HIDDEN FILES · HIDDEN');
+      return next;
+    });
+  }, []);
+
   /* ── what the list and deck show: the folder, or find results ── */
   const query = find.query.trim().toLowerCase();
+  const listed = useMemo(
+    () => (showHidden ? entries : entries.filter((e) => !e.hidden)),
+    [entries, showHidden]
+  );
   const view = useMemo(() => {
-    if (!find.open || !query) return entries;
-    if (find.deep) return fsys.search?.results ?? [];
-    return entries.filter((e) => e.name.toLowerCase().includes(query));
-  }, [entries, find.open, find.deep, query, fsys.search]);
+    if (!find.open || !query) return listed;
+    if (find.deep) {
+      const results = fsys.search?.results ?? [];
+      return showHidden ? results : results.filter((e) => !e.hidden);
+    }
+    return listed.filter((e) => e.name.toLowerCase().includes(query));
+  }, [listed, find.open, find.deep, query, fsys.search, showHidden]);
   const searching = find.open && Boolean(query);
+  const visibleDirs = listed.filter((e) => e.type === 'dir').length;
+  const visibleFiles = listed.filter((e) => e.type === 'file').length;
 
   const focusIndex = useMemo(() => {
     const index = focusPath ? view.findIndex((f) => f.path === focusPath) : 0;
@@ -342,9 +382,19 @@ export default function FileManager() {
         term.toggle();
         return;
       }
+      if (event.ctrlKey && !event.altKey && !event.metaKey && (event.key === 'h' || event.key === 'H')) {
+        event.preventDefault();
+        toggleHidden();
+        return;
+      }
       const typing = event.target instanceof HTMLElement && /^(INPUT|TEXTAREA|SELECT|VIDEO)$/.test(event.target.tagName);
       if (typing || menu) return;
 
+      if (event.key === 'F1' || (event.key === '?' && !event.ctrlKey)) {
+        event.preventDefault();
+        setHelpOpen((open) => !open);
+        return;
+      }
       if (event.ctrlKey && (event.key === 'l' || event.key === 'L')) {
         event.preventDefault();
         setSaver(true);
@@ -360,6 +410,7 @@ export default function FileManager() {
       } else if (event.key === 'Escape') {
         if (arming) setArming(null);
         else if (staging) setStaging(false);
+        else if (helpOpen) setHelpOpen(false);
         else if (term.open) term.closeTerm();
         else if (find.open) closeFind();
       } else if (event.key === 'Enter' && focused) {
@@ -387,7 +438,7 @@ export default function FileManager() {
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [step, focused, current, openDirectory, fsys, activate, arming, armTransfer, saver, dialog, menu, staging, find.open, closeFind, openFind, term.open, term.toggle, term.closeTerm, askRename, askTrash, openMenu]);
+  }, [step, focused, current, openDirectory, fsys, activate, arming, armTransfer, saver, dialog, menu, staging, find.open, closeFind, openFind, term.open, term.toggle, term.closeTerm, askRename, askTrash, openMenu, toggleHidden, helpOpen]);
 
   const onWheel = (event) => {
     const now = performance.now();
@@ -559,12 +610,18 @@ export default function FileManager() {
             </span>
             {current && (
               <span className="meta">
-                {String(current.folderCount).padStart(3, '0')} DIR · {String(current.fileCount).padStart(3, '0')} FILE
+                {String(visibleDirs).padStart(3, '0')} DIR · {String(visibleFiles).padStart(3, '0')} FILE
+                {!showHidden && entries.some((e) => e.hidden) ? ' · CTRL+H' : ''}
               </span>
             )}
             {fsys.banner && (
               <span className="banner" role="alert">
                 {fsys.banner}
+              </span>
+            )}
+            {flash && (
+              <span className="flash" role="status">
+                {flash}
               </span>
             )}
             {arming && <span className="arming">SELECT A VOLUME ON THE RIGHT · ESC TO CANCEL</span>}
@@ -583,13 +640,25 @@ export default function FileManager() {
             onClose={term.closeTerm}
           />
         )}
-        {transfer ? (
+        {transfer && (
           <TransferStatus transfer={transfer} onCancel={fsys.cancelTransfer} onDismiss={fsys.dismissTransfer} />
-        ) : (
-          !term.open && (
-            <span className="hint">CTRL+F FIND · CTRL+J TERM · SPACE PREVIEW · ENTER OPEN · RIGHT-CLICK ACTIONS</span>
-          )
         )}
+        <button
+          type="button"
+          className={`bar-btn${showHidden ? ' is-on' : ''}`}
+          title="Show hidden files (Ctrl+H)"
+          onClick={toggleHidden}
+        >
+          HIDDEN
+        </button>
+        <button
+          type="button"
+          className={`bar-btn${helpOpen ? ' is-on' : ''}`}
+          title="Keyboard shortcuts (F1)"
+          onClick={() => setHelpOpen((open) => !open)}
+        >
+          ?
+        </button>
         <button
           type="button"
           className={`bar-btn${term.open ? ' is-on' : ''}`}
@@ -620,6 +689,7 @@ export default function FileManager() {
 
       {menu && <ContextMenu {...menu} onClose={() => setMenu(null)} />}
       {dialog && <Dialog {...dialog} onCancel={() => setDialog(null)} />}
+      <HelpSheet open={helpOpen} onClose={() => setHelpOpen(false)} />
       {saver && <Screensaver onWake={wake} />}
     </div>
   );

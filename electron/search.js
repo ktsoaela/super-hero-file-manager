@@ -1,6 +1,7 @@
 const fs = require('fs/promises');
 const path = require('path');
 const { classify } = require('./preview');
+const { isDotHidden } = require('./hidden');
 
 const LIMIT = 400;
 const PARALLEL = 16;
@@ -41,7 +42,13 @@ async function searchTree(root, query, isActive, emit) {
       if (isDir && !SKIP.has(entry.name.toLowerCase())) queue.push(full);
       if (found < LIMIT && entry.name.toLowerCase().includes(needle)) {
         found += 1;
-        const item = { name: entry.name, path: full, type: isDir ? 'dir' : 'file', where: path.relative(root, dir) };
+        const item = {
+          name: entry.name,
+          path: full,
+          type: isDir ? 'dir' : 'file',
+          where: path.relative(root, dir),
+          hidden: isDotHidden(entry.name),
+        };
         if (!isDir) {
           Object.assign(item, classify(entry.name));
           try {

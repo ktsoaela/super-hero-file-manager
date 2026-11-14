@@ -94,6 +94,61 @@ export function Screensaver({ onWake }) {
   );
 }
 
+const HELP_ROWS = [
+  ['Ctrl+F', 'Find in this folder'],
+  ['Ctrl+J', 'Toggle terminal'],
+  ['Ctrl+H', 'Show / hide hidden files'],
+  ['Space', 'Preview selection'],
+  ['Enter', 'Open folder or file'],
+  ['Backspace', 'Up one folder'],
+  ['↑ ↓ / scroll', 'Move through the deck'],
+  ['F2', 'Rename'],
+  ['Delete', 'Move to Recycle Bin'],
+  ['T', 'Arm transfer to a volume'],
+  ['F5', 'Refresh'],
+  ['Ctrl+L', 'Screensaver'],
+  ['Right-click', 'Actions menu'],
+  ['F1 / ?', 'This help'],
+];
+
+/** Shortcut sheet — closed by default; open from HELP or F1. */
+export function HelpSheet({ open, onClose }) {
+  useEffect(() => {
+    if (!open) return undefined;
+    const onKey = (event) => {
+      if (event.key === 'Escape') {
+        event.preventDefault();
+        onClose();
+      }
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [open, onClose]);
+
+  if (!open) return null;
+
+  return (
+    <div className="help-sheet" role="dialog" aria-label="Keyboard shortcuts" onClick={onClose}>
+      <div className="help-card" onClick={(e) => e.stopPropagation()}>
+        <header className="help-head">
+          <span>SHORTCUTS</span>
+          <button type="button" className="bar-btn" onClick={onClose} aria-label="Close help">
+            ✕
+          </button>
+        </header>
+        <ul className="help-list">
+          {HELP_ROWS.map(([keys, label]) => (
+            <li key={keys}>
+              <kbd>{keys}</kbd>
+              <span>{label}</span>
+            </li>
+          ))}
+        </ul>
+      </div>
+    </div>
+  );
+}
+
 export function TransferStatus({ transfer, onCancel, onDismiss }) {
   const running = transfer.phase === 'scanning' || transfer.phase === 'copying';
 
