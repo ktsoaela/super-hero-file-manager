@@ -123,7 +123,7 @@ function drawTag({ name, color, rank }) {
 
 const edgeGeometry = new THREE.EdgesGeometry(new THREE.BoxGeometry(W, H, T));
 
-function Plate({ folder, slot, rank, color, scale, share, hovered, onHover, onPick }) {
+function Plate({ folder, slot, rank, color, scale, share, hovered, onHover, onPick, onOpen }) {
   const group = useRef();
   const edge = useRef();
   const materials = useRef(new Set());
@@ -180,6 +180,10 @@ function Plate({ folder, slot, rank, color, scale, share, hovered, onHover, onPi
         e.stopPropagation();
         if (slot >= 0 && slot < VISIBLE) onPick(folder, slot);
       }}
+      onDoubleClick={(e) => {
+        e.stopPropagation();
+        if (slot === 0) onOpen(folder.path);
+      }}
       onPointerOver={(e) => {
         e.stopPropagation();
         onHover(folder.path);
@@ -217,15 +221,20 @@ function Plate({ folder, slot, rank, color, scale, share, hovered, onHover, onPi
 }
 
 /** Keeps the stack framed for any panel size and adds a slight pointer parallax. */
-function Rig({ children }) {
+function Rig({ children, shifted }) {
   const group = useRef();
   const { viewport, camera } = useThree();
   const halfW = viewport.width / 2;
-  const base = useMemo(() => [-halfW * 0.4, -viewport.height * 0.2, 0], [halfW, viewport.height]);
+  const baseY = -viewport.height * 0.2;
+  const targetX = shifted ? halfW * 0.46 : -halfW * 0.4;
+  const initial = useRef([targetX, baseY, 0]).current;
 
   useFrame((state, dt) => {
     if (!group.current) return;
     const k = 1 - Math.exp(-dt * 3);
+    const g = group.current.position;
+    g.x += (targetX - g.x) * (reduceMotion ? 1 : 1 - Math.exp(-dt * 6));
+    g.y = baseY;
     const px = reduceMotion ? 0 : state.pointer.x;
     const py = reduceMotion ? 0 : state.pointer.y;
     camera.position.x += (0.4 + px * 0.35 - camera.position.x) * k;
@@ -235,13 +244,13 @@ function Rig({ children }) {
 
   const fit = Math.min(1, viewport.width / 4.6);
   return (
-    <group ref={group} position={base} scale={fit}>
+    <group ref={group} position={initial} scale={fit}>
       {children}
     </group>
   );
 }
 
-export default function FolderStack({ folders, focusIndex, onFocus, onOpen }) {
+export default function FolderStack({ folders, focusIndex, shifted, onFocus, onPreview, onOpen }) {
   const [hovered, setHovered] = useState(null);
   const max = maxBytes(folders);
   const first = Math.max(0, focusIndex - 2);
@@ -265,7 +274,7 @@ export default function FolderStack({ folders, focusIndex, onFocus, onOpen }) {
       <ambientLight intensity={1.1} />
       <directionalLight position={[-5, 6, 7]} intensity={1.6} />
       <directionalLight position={[6, -2, 3]} intensity={0.5} color="#bfe3f0" />
-      <Rig>
+      <Rig shifted={shifted}>
         {shown.map((folder, i) => {
           const index = first + i;
           const share = max && folder.bytes ? Math.sqrt(folder.bytes / max) : 0;
@@ -280,7 +289,8 @@ export default function FolderStack({ folders, focusIndex, onFocus, onOpen }) {
               share={max && folder.bytes ? folder.bytes / max : 0}
               hovered={hovered === folder.path}
               onHover={setHovered}
-              onPick={(picked, slot) => (slot === 0 ? onOpen(picked.path) : onFocus(index))}
+              onPick={(_, slot) => (slot === 0 ? onPreview() : onFocus(index))}
+              onOpen={onOpen}
             />
           );
         })}

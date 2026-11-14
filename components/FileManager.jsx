@@ -4,6 +4,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import DirectoryColumn from './DirectoryColumn';
 import DesktopColumn from './DesktopColumn';
 import FolderStack from './FolderStack';
+import PreviewSpread from './PreviewSpread';
 import { useFileSystem } from '../lib/useFileSystem';
 import { formatBytes, knownTotal, samePath, toCode } from '../lib/format';
 
@@ -26,9 +27,13 @@ export default function FileManager() {
   const fsys = useFileSystem();
   const { current, folders, measuring, openDirectory } = fsys;
   const [focusPath, setFocusPath] = useState(null);
+  const [previewing, setPreviewing] = useState(false);
   const lastWheel = useRef(0);
 
-  useEffect(() => setFocusPath(null), [current?.path]);
+  useEffect(() => {
+    setFocusPath(null);
+    setPreviewing(false);
+  }, [current?.path]);
 
   const focusIndex = useMemo(() => {
     const index = focusPath ? folders.findIndex((f) => samePath(f.path, focusPath)) : 0;
@@ -53,6 +58,11 @@ export default function FileManager() {
       } else if (event.key === 'ArrowUp' || event.key === 'ArrowLeft') {
         event.preventDefault();
         step(-1);
+      } else if (event.key === ' ' && focused && fsys.previewApi) {
+        event.preventDefault();
+        setPreviewing((p) => !p);
+      } else if (event.key === 'Escape') {
+        setPreviewing(false);
       } else if (event.key === 'Enter' && focused) {
         event.preventDefault();
         openDirectory(focused.path);
@@ -104,8 +114,16 @@ export default function FileManager() {
       </header>
 
       <main className="bezel">
-        <div className="glass">
+        <div className={`glass${previewing ? ' is-previewing' : ''}`}>
           <div className="glass-sheen" aria-hidden="true" />
+          {previewing && focused && (
+            <PreviewSpread
+              folder={focused}
+              api={fsys.previewApi}
+              onClose={() => setPreviewing(false)}
+              onOpenFile={fsys.openFile}
+            />
+          )}
           <DirectoryColumn
             roots={fsys.roots}
             current={current}
@@ -121,7 +139,14 @@ export default function FileManager() {
             </p>
             <div className="stack-glow" aria-hidden="true" />
             {folders.length > 0 ? (
-              <FolderStack folders={folders} focusIndex={focusIndex} onFocus={(i) => setFocusPath(folders[i].path)} onOpen={openDirectory} />
+              <FolderStack
+                folders={folders}
+                focusIndex={focusIndex}
+                shifted={previewing}
+                onFocus={(i) => setFocusPath(folders[i].path)}
+                onPreview={() => fsys.previewApi && setPreviewing(true)}
+                onOpen={openDirectory}
+              />
             ) : (
               <p className="stack-empty">{current ? 'NO_FOLDERS_INSIDE' : 'READING…'}</p>
             )}
@@ -170,7 +195,7 @@ export default function FileManager() {
         )}
         {fsys.banner && <span className="banner" role="alert">{fsys.banner}</span>}
         <span className="spacer" />
-        <span className="hint">↑↓ SELECT · ENTER OPEN · ⌫ BACK</span>
+        <span className="hint">↑↓ SELECT · SPACE PREVIEW · ENTER OPEN · ⌫ BACK</span>
         <button type="button" className="bar-btn" title="Refresh (F5)" onClick={fsys.refresh}>
           REFRESH
         </button>

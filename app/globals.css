@@ -501,7 +501,7 @@ p {
 .glass-sheen {
   position: absolute;
   inset: 0;
-  z-index: 3;
+  z-index: 6;
   pointer-events: none;
   background:
     linear-gradient(115deg, transparent 0 18%, rgba(255, 255, 255, 0.16) 22%, transparent 30%),
@@ -629,5 +629,415 @@ p {
     animation-delay: 0ms !important;
     animation-iteration-count: 1 !important;
     transition-duration: 1ms !important;
+  }
+}
+
+/* ───────── folder preview: file sheets spread over the left columns ───────── */
+.preview {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 0;
+  width: 60%;
+  z-index: 4;
+  background: linear-gradient(90deg, rgba(40, 52, 62, 0.2), rgba(40, 52, 62, 0.08) 70%, transparent);
+  animation: fade-in 240ms both;
+}
+
+.glass .col-dir,
+.glass .col-stack {
+  transition: filter 300ms ease;
+}
+
+.glass.is-previewing .col-dir {
+  filter: blur(1.5px) brightness(0.92);
+}
+
+.sheets {
+  position: absolute;
+  inset: 0 0 38px;
+}
+
+.sheet {
+  position: absolute;
+  left: var(--x);
+  top: var(--y);
+  height: 80%;
+  aspect-ratio: 0.74;
+  max-width: 52%;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  text-align: left;
+  font-family: var(--mono);
+  color: #34332d;
+  background: #efe8d6;
+  border: 1px solid rgba(60, 55, 40, 0.25);
+  box-shadow:
+    0 1px 0 rgba(255, 255, 255, 0.6) inset,
+    -2px 0 0 rgba(0, 0, 0, 0.06),
+    0 18px 30px -12px rgba(15, 25, 35, 0.55),
+    0 2px 6px rgba(15, 25, 35, 0.25);
+  transform: rotate(var(--r));
+  transform-origin: 30% 80%;
+  transition: transform 260ms cubic-bezier(0.2, 0.8, 0.2, 1), box-shadow 260ms ease, filter 260ms ease;
+  animation: sheet-in 620ms cubic-bezier(0.16, 0.9, 0.25, 1) backwards;
+  animation-delay: calc(var(--i) * 55ms);
+}
+
+.sheet:not(.is-raised) {
+  filter: brightness(0.94);
+}
+
+.sheet:hover {
+  transform: rotate(var(--r)) translateY(-8px);
+  filter: none;
+}
+
+.sheet.is-raised {
+  transform: rotate(0deg) translateY(-6px) scale(1.02);
+  box-shadow:
+    0 0 0 1px rgba(95, 212, 238, 0.65),
+    0 26px 44px -14px rgba(10, 20, 30, 0.65),
+    0 4px 10px rgba(10, 20, 30, 0.3);
+}
+
+.sheet:focus-visible {
+  outline: 2px solid #5fd4ee;
+}
+
+.sheet-head {
+  align-self: stretch;
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 7px 10px 6px;
+  border-bottom: 1px solid rgba(60, 55, 40, 0.3);
+  background: rgba(255, 255, 255, 0.28);
+}
+
+.sheet-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+}
+
+.sheet-meta {
+  font-size: 8px;
+  letter-spacing: 0.08em;
+  opacity: 0.6;
+}
+
+/* paper documents (md, txt, csv…) */
+.doc-body {
+  position: relative;
+  flex: 1;
+  min-height: 0;
+  padding: 8px 12px;
+  overflow: hidden;
+  background:
+    linear-gradient(90deg, transparent 0 calc(100% - 1px), rgba(60, 55, 40, 0.12) 0) 0 0 / 50% 100% no-repeat;
+}
+
+.doc-form {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 8px;
+  padding-bottom: 6px;
+  border-bottom: 1px dashed rgba(60, 55, 40, 0.3);
+  font-size: 8px;
+  letter-spacing: 0.08em;
+}
+
+.barcode {
+  display: inline-flex;
+  gap: 1px;
+  height: 16px;
+}
+
+.barcode i {
+  display: block;
+  height: 100%;
+  background: #24231f;
+}
+
+.doc-text,
+.code-text {
+  margin: 0;
+  white-space: pre-wrap;
+  word-break: break-word;
+  font-family: inherit;
+  font-size: 8px;
+  line-height: 1.5;
+}
+
+.doc-h {
+  font-size: 9px;
+  font-weight: 700;
+  color: #1c1b17;
+}
+
+.doc-stamp {
+  position: absolute;
+  right: 14px;
+  bottom: 18px;
+  padding: 2px 6px;
+  border: 2px solid rgba(192, 57, 43, 0.6);
+  color: rgba(192, 57, 43, 0.65);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  transform: rotate(-6deg);
+}
+
+.doc-unreadable {
+  padding: 20px 0;
+  font-size: 9px;
+  letter-spacing: 0.1em;
+  opacity: 0.55;
+}
+
+/* blueprints (code files) */
+.sheet-blueprint {
+  color: #e4f1ff;
+  background:
+    repeating-linear-gradient(0deg, rgba(255, 255, 255, 0.07) 0 1px, transparent 1px 16px),
+    repeating-linear-gradient(90deg, rgba(255, 255, 255, 0.07) 0 1px, transparent 1px 16px),
+    linear-gradient(160deg, #24598c, #173f66);
+  border-color: rgba(200, 230, 255, 0.35);
+}
+
+.sheet-blueprint .sheet-head {
+  background: rgba(255, 255, 255, 0.06);
+  border-bottom-color: rgba(220, 240, 255, 0.35);
+}
+
+.code-body {
+  position: relative;
+  flex: 1;
+  min-height: 0;
+  padding: 8px 10px 52px;
+  overflow: hidden;
+}
+
+.code-text em {
+  font-style: normal;
+  margin-right: 8px;
+  color: rgba(220, 240, 255, 0.35);
+}
+
+.title-block {
+  position: absolute;
+  right: 8px;
+  bottom: 8px;
+  border-collapse: collapse;
+  background: #1a4670;
+  font-size: 7px;
+  letter-spacing: 0.08em;
+}
+
+.title-block td {
+  padding: 3px 6px;
+  border: 1px solid rgba(220, 240, 255, 0.6);
+}
+
+/* images, pdfs, video frames */
+.media-body {
+  position: relative;
+  flex: 1;
+  min-height: 0;
+  margin: 8px;
+  display: grid;
+  place-items: center;
+  overflow: hidden;
+  background: #d9dcdf;
+}
+
+.media-body img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.sheet-image {
+  background: #f8f8f6;
+}
+
+.sheet-pdf {
+  background: #fbfaf6;
+}
+
+.sheet-pdf .media-body {
+  background: #fff;
+  box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.08);
+}
+
+.sheet-pdf .media-body img {
+  object-fit: contain;
+}
+
+.pdf-stamp {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  padding: 2px 6px;
+  background: #c3212d;
+  color: #fff;
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+}
+
+.sheet-video {
+  color: #d8dde1;
+  background: #15181b;
+  border-color: #000;
+}
+
+.sheet-video .sheet-head {
+  background: rgba(255, 255, 255, 0.04);
+  border-bottom-color: rgba(255, 255, 255, 0.12);
+}
+
+.media-video {
+  margin: 8px 0;
+  padding: 0 14px;
+  background:
+    repeating-linear-gradient(180deg, #e8e8e8 0 6px, transparent 6px 12px) 4px 0 / 6px 100% no-repeat,
+    repeating-linear-gradient(180deg, #e8e8e8 0 6px, transparent 6px 12px) calc(100% - 4px) 0 / 6px 100% no-repeat,
+    #050607;
+}
+
+.play {
+  position: absolute;
+  width: 46px;
+  height: 46px;
+  border-radius: 50%;
+  background: rgba(0, 0, 0, 0.45);
+  box-shadow: 0 0 0 2px rgba(255, 255, 255, 0.8);
+}
+
+.play::after {
+  content: "";
+  position: absolute;
+  left: 18px;
+  top: 14px;
+  border-style: solid;
+  border-width: 9px 0 9px 14px;
+  border-color: transparent transparent transparent #fff;
+}
+
+.media-wait,
+.media-none {
+  font-size: 10px;
+  letter-spacing: 0.14em;
+  color: rgba(60, 70, 80, 0.6);
+}
+
+.media-none {
+  font-size: 26px;
+  font-weight: 700;
+}
+
+.media-wait {
+  animation: blink 1s steps(1) infinite;
+}
+
+.sheet-video .media-wait,
+.sheet-video .media-none {
+  color: rgba(220, 230, 235, 0.55);
+}
+
+/* anything else */
+.sheet-card {
+  background: linear-gradient(160deg, #ddcfa6, #c9b788);
+}
+
+.card-ext {
+  flex: 1;
+  display: grid;
+  place-items: center;
+  font-size: 30px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  color: rgba(70, 58, 30, 0.55);
+}
+
+/* preview chrome */
+.preview-bar {
+  position: absolute;
+  left: 12px;
+  right: 12px;
+  bottom: 9px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-family: var(--mono);
+  font-size: 10px;
+  letter-spacing: 0.1em;
+  color: #4d5960;
+}
+
+.preview-tag {
+  padding: 3px 8px;
+  background: linear-gradient(180deg, #2fa3c2, #1f88a6);
+  color: #f2fbfe;
+  font-weight: 700;
+}
+
+.preview-title {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: #22303a;
+  font-weight: 700;
+}
+
+.preview-count {
+  white-space: nowrap;
+}
+
+.preview-close {
+  flex: 0 0 auto;
+  width: 22px;
+  height: 22px;
+  display: grid;
+  place-items: center;
+  border: 1px solid rgba(40, 60, 70, 0.35);
+  color: #33434c;
+}
+
+.preview-close:hover {
+  background: rgba(31, 138, 166, 0.15);
+}
+
+.preview-empty {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-content: center;
+  gap: 6px;
+  text-align: center;
+  font-family: var(--mono);
+  font-size: 14px;
+  letter-spacing: 0.16em;
+  color: #4d5960;
+}
+
+.preview-empty span {
+  font-size: 10px;
+  opacity: 0.7;
+}
+
+@keyframes sheet-in {
+  from {
+    opacity: 0;
+    transform: translate(120%, 8%) rotate(9deg) scale(0.9);
   }
 }

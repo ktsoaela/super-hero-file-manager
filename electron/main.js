@@ -5,6 +5,7 @@ const path = require('path');
 const { pathToFileURL } = require('url');
 const { execFile } = require('child_process');
 const { measureFolders } = require('./folder-size');
+const preview = require('./preview');
 
 const jobs = { inside: 0, desktop: 0 };
 const OUT_DIR = path.join(__dirname, '..', 'out');
@@ -238,6 +239,13 @@ if (!gotLock) {
 
 ipcMain.handle('bootstrap', () => readSystemRoots());
 ipcMain.handle('list-directory', (_event, dirPath) => listDirectory(dirPath));
+ipcMain.handle('preview-folder', (_event, dirPath) => preview.previewFolder(dirPath));
+ipcMain.handle('thumbnail', (_event, filePath) => preview.thumbnail(filePath));
+ipcMain.handle('open-file', async (_event, filePath) => {
+  if (!preview.isAllowed(filePath)) return { ok: false, message: 'That file is not available.' };
+  const error = await shell.openPath(filePath);
+  return error ? { ok: false, message: 'No app could open that file.' } : { ok: true };
+});
 
 ipcMain.handle('open-in-explorer', async (_event, dirPath) => {
   const resolved = assertAbsolute(dirPath);
