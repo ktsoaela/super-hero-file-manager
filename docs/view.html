@@ -1,0 +1,371 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Voice view — Super Hero File Manager</title>
+  <link rel="icon" href="logo.png" />
+  <style>
+    :root {
+      --void: #050607;
+      --bezel: #1b2329;
+      --teal: #1f8aa6;
+      --ink: #9aa8b2;
+      --paper: #e9eef1;
+      --muted: #7c868d;
+      --line: #2b343a;
+      --glow: #8fd3e4;
+      --mono: "Cascadia Mono", "Cascadia Code", Consolas, monospace;
+      --display: Bahnschrift, "Segoe UI Variable Display", "Segoe UI", sans-serif;
+    }
+    * { box-sizing: border-box; }
+    html, body { height: 100%; margin: 0; background: var(--void); color: var(--paper); font-family: var(--display); }
+    button { font: inherit; color: inherit; background: none; border: 0; padding: 0; cursor: pointer; }
+    a { color: inherit; }
+    .shell {
+      height: 100%;
+      display: grid;
+      grid-template-rows: 36px minmax(0, 1fr) 40px;
+    }
+    .shell.is-term { grid-template-rows: 36px minmax(0, 1fr) 96px 40px; }
+    .topbar, .bottombar {
+      display: flex;
+      align-items: center;
+      gap: 16px;
+      padding: 0 18px;
+      font-family: var(--mono);
+      font-size: 11px;
+      letter-spacing: 0.12em;
+      color: #7c868d;
+    }
+    .brand { color: #e3e9ed; font-weight: 700; letter-spacing: 0.18em; }
+    .brand span { margin-left: 0.6em; font-weight: 400; color: #6f7a82; }
+    .rule { width: 1px; height: 14px; background: var(--line); }
+    .crumbs { color: #8a959c; }
+    .spacer { flex: 1; }
+    .back { font-family: var(--mono); font-size: 11px; letter-spacing: 0.12em; color: var(--glow); text-decoration: none; }
+    .bezel {
+      min-height: 0;
+      padding: 0 28px;
+      background:
+        linear-gradient(90deg, #11171b 0 6px, transparent 6px calc(100% - 6px), #11171b calc(100% - 6px)),
+        linear-gradient(180deg, #0b1013, var(--bezel) 50%, #0b1013);
+    }
+    .glass {
+      height: 100%;
+      display: grid;
+      grid-template-columns: 1.1fr 1.6fr 0.7fr;
+      background:
+        radial-gradient(ellipse 60% 40% at 30% 20%, rgba(80, 120, 140, 0.25), transparent 70%),
+        linear-gradient(180deg, #1a232a 0%, #141c22 55%, #0f151a 100%);
+      box-shadow: inset 0 0 0 1px rgba(140, 200, 220, 0.12);
+      position: relative;
+      overflow: hidden;
+    }
+    .col { min-height: 0; position: relative; }
+    .col-dir {
+      background: linear-gradient(90deg, rgba(32, 42, 50, 0.92) 0 66%, rgba(16, 22, 27, 0.7) 66% 100%);
+      overflow: auto;
+      padding: 8px 0;
+    }
+    .row {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      height: 28px;
+      padding: 0 14px;
+      font-family: var(--mono);
+      font-size: 11px;
+      letter-spacing: 0.08em;
+      color: #c5d0d6;
+    }
+    .row i {
+      width: 14px;
+      height: 10px;
+      border: 1px solid #6b7a87;
+      background: #3b4650;
+      box-shadow: inset 0 3px 0 #8996a1;
+    }
+    .row.is-on { background: rgba(31, 138, 166, 0.28); color: var(--glow); }
+    .col-stack {
+      border-left: 1px solid rgba(140, 200, 220, 0.12);
+      border-right: 1px solid rgba(0, 0, 0, 0.5);
+      background: linear-gradient(180deg, rgba(28, 38, 46, 0.7), rgba(16, 24, 30, 0.6));
+    }
+    .code {
+      position: absolute;
+      top: 12px;
+      left: 16px;
+      margin: 0;
+      font-family: var(--mono);
+      font-size: 11px;
+      letter-spacing: 0.16em;
+      color: var(--glow);
+    }
+    .stack {
+      position: absolute;
+      inset: 48px 8% 64px;
+      perspective: 900px;
+    }
+    .card {
+      position: absolute;
+      right: 0;
+      width: 58%;
+      height: 46%;
+      border: 1px solid rgba(190, 230, 245, 0.28);
+      background: linear-gradient(160deg, #3a4650, #1c262e 60%);
+      transform-origin: 100% 80%;
+      box-shadow: 0 18px 30px rgba(0, 0, 0, 0.35);
+    }
+    .card b {
+      position: absolute;
+      left: 12px;
+      bottom: 10px;
+      font-family: var(--mono);
+      font-size: 11px;
+      letter-spacing: 0.12em;
+      font-weight: 600;
+      color: #d5e4ec;
+    }
+    .card:nth-child(1) { transform: translate3d(0, 18%, 40px) rotateY(-18deg); z-index: 6; }
+    .card:nth-child(2) { transform: translate3d(8%, 4%, 0) rotateY(-18deg); z-index: 5; width: 52%; }
+    .card:nth-child(3) { transform: translate3d(16%, -8%, -30px) rotateY(-18deg); z-index: 4; width: 46%; }
+    .card:nth-child(4) { transform: translate3d(24%, -18%, -60px) rotateY(-18deg); z-index: 3; width: 40%; }
+    .card:nth-child(5) { transform: translate3d(32%, -26%, -90px) rotateY(-18deg); z-index: 2; width: 34%; }
+    .foot {
+      position: absolute;
+      left: 16px;
+      right: 16px;
+      bottom: 14px;
+      display: flex;
+      justify-content: space-between;
+      font-family: var(--mono);
+      font-size: 10px;
+      letter-spacing: 0.12em;
+      color: #8796a0;
+    }
+    .rail { padding: 14px 12px; }
+    .rail p {
+      margin: 0 0 8px;
+      font-family: var(--mono);
+      font-size: 10px;
+      letter-spacing: 0.16em;
+      color: #8a959c;
+    }
+    .vol {
+      display: flex;
+      justify-content: space-between;
+      gap: 8px;
+      padding: 8px 0;
+      border-bottom: 1px solid rgba(43, 52, 58, 0.9);
+      font-family: var(--mono);
+      font-size: 11px;
+      letter-spacing: 0.08em;
+    }
+    .vol b { font-weight: 600; color: #d5e4ec; }
+    .vol span { color: #6f7980; }
+    .hot { outline: 1px solid var(--glow); outline-offset: -1px; }
+    .preview, .findbar, .term {
+      display: none;
+      position: absolute;
+      z-index: 4;
+      background: rgba(8, 12, 16, 0.88);
+      border: 1px solid rgba(143, 211, 228, 0.45);
+    }
+    .preview.is-on, .findbar.is-on, .term.is-on { display: block; }
+    .preview {
+      left: 18%;
+      top: 12%;
+      width: 46%;
+      bottom: 16%;
+      padding: 16px;
+    }
+    .preview strong {
+      font-family: var(--mono);
+      font-size: 12px;
+      letter-spacing: 0.14em;
+      color: var(--glow);
+    }
+    .preview p { color: var(--ink); font-size: 14px; max-width: 36em; }
+    .findbar {
+      left: 18px;
+      right: 18px;
+      bottom: 10px;
+      height: 36px;
+      display: none;
+      align-items: center;
+      gap: 10px;
+      padding: 0 12px;
+      font-family: var(--mono);
+      font-size: 11px;
+      letter-spacing: 0.12em;
+    }
+    .findbar.is-on { display: flex; }
+    .findbar i { color: var(--glow); font-style: normal; }
+    .term {
+      display: none;
+      left: 0;
+      right: 0;
+      bottom: 0;
+      height: 96px;
+      padding: 10px 16px;
+      font-family: var(--mono);
+      font-size: 12px;
+      color: var(--glow);
+    }
+    .shell.is-term .term.is-on { display: block; position: static; height: auto; }
+    .status { color: var(--glow); display: inline-flex; align-items: center; gap: 6px; }
+    .caret { width: 7px; height: 12px; background: currentColor; animation: blink 1s steps(1) infinite; }
+    @keyframes blink { 50% { opacity: 0; } }
+    .hint { color: #4f5a61; }
+    .listen {
+      padding: 4px 8px;
+      border: 1px solid transparent;
+      font-family: var(--mono);
+      font-size: 11px;
+      letter-spacing: 0.14em;
+    }
+    .listen:hover, .listen.is-on { color: var(--glow); border-color: #2c3a42; }
+    .caption {
+      position: absolute;
+      left: 28px;
+      right: 28px;
+      bottom: 52px;
+      z-index: 6;
+      padding: 10px 14px;
+      background: rgba(5, 6, 7, 0.88);
+      border: 1px solid var(--line);
+      font-family: var(--mono);
+      font-size: 13px;
+      letter-spacing: 0.04em;
+      color: var(--paper);
+    }
+    .caption:empty { display: none; }
+  </style>
+</head>
+<body>
+  <div class="shell" id="shell">
+    <header class="topbar">
+      <span class="brand">SUPER HERO<span>FILE MANAGER</span></span>
+      <span class="rule"></span>
+      <span class="crumbs">C: / USERS / STARK</span>
+      <span class="spacer"></span>
+      <a class="back" href="index.html">PAGE</a>
+    </header>
+    <main class="bezel">
+      <div class="glass">
+        <section class="col col-dir" id="list" aria-label="Folder">
+          <div class="row is-on"><i></i>DESKTOP</div>
+          <div class="row"><i></i>DOCUMENTS</div>
+          <div class="row"><i></i>DOWNLOADS</div>
+          <div class="row"><i></i>PICTURES</div>
+          <div class="row"><i></i>VIDEOS</div>
+          <div class="row"><i></i>MUSIC</div>
+          <div class="row"><i></i>PROJECTS</div>
+        </section>
+        <section class="col col-stack" id="stack" aria-label="Stack">
+          <p class="code" id="code">STARK_007</p>
+          <div class="stack" aria-hidden="true">
+            <div class="card"><b>DESKTOP</b></div>
+            <div class="card"><b>DOCUMENTS</b></div>
+            <div class="card"><b>DOWNLOADS</b></div>
+            <div class="card"><b>PICTURES</b></div>
+            <div class="card"><b>VIDEOS</b></div>
+          </div>
+          <div class="foot">
+            <span>LARGEST → SMALLEST</span>
+            <span id="rank">01 / 07</span>
+          </div>
+          <div class="preview" id="preview">
+            <strong>PREVIEW · DESKTOP</strong>
+            <p>The folder stays open. This is the preview, not a new place.</p>
+          </div>
+          <div class="findbar" id="find"><i>FIND</i><span>DOC</span><span>HERE</span></div>
+        </section>
+        <aside class="rail" id="rail">
+          <p>VOLUMES</p>
+          <div class="vol"><b>SYSTEMS</b><span>C:</span></div>
+          <div class="vol"><b>BACKUP</b><span>D:</span></div>
+          <div class="vol"><b>BACKUP_IO</b><span>E:</span></div>
+        </aside>
+      </div>
+    </main>
+    <section class="term" id="term">C:\Users\stark&gt; _</section>
+    <footer class="bottombar">
+      <span class="status">READY<span class="caret"></span></span>
+      <span class="hint" id="hint">LISTEN PLAYS THE WALKTHROUGH</span>
+      <span class="spacer"></span>
+      <button type="button" class="listen" id="listen">LISTEN</button>
+    </footer>
+    <p class="caption" id="caption" aria-live="polite"></p>
+  </div>
+  <audio id="voice" preload="auto" src="voice.mp3"></audio>
+  <script>
+    /* CUES:START */
+    const CUES = [
+      { t: 0.00, region: "stack", text: "Super Hero File Manager. Dark mode. The folder is on the left. The stack is the same folder, largest first." },
+      { t: 10.98, region: "list", text: "Arrow down walks the stack. The callout names the item you are on." },
+      { t: 17.07, region: "preview", text: "Space opens a preview, and you stay in the folder." },
+      { t: 21.33, region: "stack", text: "Escape closes the preview." },
+      { t: 24.34, region: "find", text: "Control F finds a name in this folder. Tab would search every subfolder." },
+      { t: 30.67, region: "rail", text: "The right rail lists volumes. Press T, then choose a volume, to copy the selected item." },
+      { t: 38.56, region: "term", text: "Control J opens a terminal in the folder you are looking at." },
+      { t: 43.18, region: "stack", text: "That is the desk. List, stack, preview, find, transfer, and a terminal." }
+    ];
+    /* CUES:END */
+    const regions = ["list", "stack", "preview", "find", "rail", "term"];
+    const audio = document.getElementById("voice");
+    const listen = document.getElementById("listen");
+    const caption = document.getElementById("caption");
+    const shell = document.getElementById("shell");
+    const rows = [...document.querySelectorAll(".row")];
+
+    function show(region) {
+      regions.forEach((id) => {
+        const el = document.getElementById(id);
+        el.classList.toggle("hot", id === region);
+        el.classList.toggle("is-on", id === region && (id === "preview" || id === "find" || id === "term"));
+      });
+      shell.classList.toggle("is-term", region === "term");
+      if (region === "list") {
+        rows.forEach((row, i) => row.classList.toggle("is-on", i === 1));
+        document.getElementById("rank").textContent = "02 / 07";
+        document.getElementById("code").textContent = "DOCUMENTS_007";
+      }
+      if (region === "stack") {
+        rows.forEach((row, i) => row.classList.toggle("is-on", i === 0));
+        document.getElementById("rank").textContent = "01 / 07";
+        document.getElementById("code").textContent = "STARK_007";
+      }
+    }
+
+    function cueAt(time) {
+      let current = CUES[0];
+      for (const cue of CUES) if (time + 0.05 >= cue.t) current = cue;
+      return current;
+    }
+
+    audio.addEventListener("timeupdate", () => {
+      const cue = cueAt(audio.currentTime);
+      caption.textContent = cue.text;
+      show(cue.region);
+    });
+    audio.addEventListener("play", () => listen.classList.add("is-on"));
+    audio.addEventListener("ended", () => {
+      listen.classList.remove("is-on");
+      listen.textContent = "LISTEN";
+    });
+    listen.addEventListener("click", () => {
+      if (!audio.paused) {
+        audio.pause();
+        listen.classList.remove("is-on");
+        listen.textContent = "LISTEN";
+        return;
+      }
+      audio.play().then(() => { listen.textContent = "PAUSE"; }).catch(() => {
+        caption.textContent = "The voice file is not on this page yet.";
+      });
+    });
+  </script>
+</body>
+</html>

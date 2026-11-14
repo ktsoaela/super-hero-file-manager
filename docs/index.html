@@ -1,0 +1,308 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Super Hero File Manager</title>
+  <meta name="description" content="A file manager that stacks a folder by size. Walk it, preview a file, find a name, and copy onto a volume." />
+  <link rel="icon" href="logo.png" />
+  <style>
+    :root {
+      --void: #050607;
+      --bezel: #1b2329;
+      --teal: #1f8aa6;
+      --teal-deep: #136a82;
+      --ink: #9aa8b2;
+      --paper: #e9eef1;
+      --muted: #7c868d;
+      --line: #2b343a;
+      --glow: #8fd3e4;
+      --mono: "Cascadia Mono", "Cascadia Code", Consolas, monospace;
+      --display: Bahnschrift, "Segoe UI Variable Display", "Segoe UI", sans-serif;
+    }
+    * { box-sizing: border-box; }
+    html { scroll-behavior: smooth; }
+    body {
+      margin: 0;
+      color: var(--paper);
+      background: var(--void);
+      font: 17px/1.55 var(--display);
+    }
+    a { color: inherit; }
+    img { max-width: 100%; display: block; }
+    .wrap { width: min(1120px, calc(100% - 48px)); margin: 0 auto; }
+    header {
+      position: sticky;
+      top: 0;
+      z-index: 5;
+      background: rgba(5, 6, 7, 0.92);
+      backdrop-filter: blur(10px);
+      border-bottom: 1px solid var(--line);
+    }
+    .nav {
+      min-height: 64px;
+      display: flex;
+      align-items: center;
+      gap: 22px;
+      font-family: var(--mono);
+      font-size: 11px;
+      letter-spacing: 0.14em;
+    }
+    .brand {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      text-decoration: none;
+      color: var(--paper);
+      font-weight: 700;
+      letter-spacing: 0.18em;
+    }
+    .brand img {
+      width: 28px;
+      height: 28px;
+      object-fit: contain;
+      background: #050607;
+      border-radius: 4px;
+    }
+    .brand span { color: #6f7a82; font-weight: 400; margin-left: 0.5em; }
+    nav { display: flex; gap: 18px; }
+    nav a { color: var(--muted); text-decoration: none; }
+    nav a:hover { color: var(--paper); }
+    .end { margin-left: auto; display: flex; gap: 10px; align-items: center; }
+    .btn {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      min-height: 40px;
+      padding: 0 16px;
+      text-decoration: none;
+      font-family: var(--mono);
+      font-size: 11px;
+      font-weight: 700;
+      letter-spacing: 0.14em;
+      color: #041014;
+      background: var(--glow);
+      border: 1px solid transparent;
+    }
+    .btn.ghost {
+      background: transparent;
+      color: var(--paper);
+      border-color: var(--line);
+    }
+    .btn.ghost:hover { border-color: var(--teal); color: var(--glow); }
+    .hero {
+      display: grid;
+      grid-template-columns: 0.9fr 1.2fr;
+      gap: 48px;
+      align-items: center;
+      padding: 72px 0 28px;
+    }
+    .kicker {
+      margin: 0 0 14px;
+      color: var(--glow);
+      font-family: var(--mono);
+      font-size: 11px;
+      font-weight: 700;
+      letter-spacing: 0.18em;
+    }
+    h1 {
+      margin: 0;
+      font-weight: 600;
+      font-size: clamp(44px, 5.2vw, 72px);
+      line-height: 0.96;
+      letter-spacing: -0.03em;
+    }
+    h1 span { display: block; color: var(--glow); }
+    .sub { margin: 18px 0 0; color: var(--ink); font-size: 18px; max-width: 34em; }
+    .hero-actions { display: flex; gap: 10px; margin-top: 26px; flex-wrap: wrap; }
+    .frame {
+      background: var(--bezel);
+      border: 1px solid var(--line);
+      padding: 10px;
+      box-shadow: 0 24px 60px rgba(0, 0, 0, 0.45);
+    }
+    .frame video { width: 100%; display: block; background: #050607; aspect-ratio: 16/9; }
+    .frame figcaption, .fine { color: var(--muted); font-family: var(--mono); font-size: 11px; letter-spacing: 0.08em; margin: 10px 4px 2px; }
+    .strip {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      border-top: 1px solid var(--line);
+      border-bottom: 1px solid var(--line);
+    }
+    .strip div { padding: 22px 8px; }
+    .strip b {
+      display: block;
+      font-size: 22px;
+      font-weight: 600;
+      letter-spacing: -0.02em;
+    }
+    .strip span { color: var(--muted); font-family: var(--mono); font-size: 11px; letter-spacing: 0.1em; }
+    section { padding: 72px 0; }
+    h2 {
+      margin: 0 0 10px;
+      font-size: clamp(32px, 4vw, 48px);
+      font-weight: 600;
+      letter-spacing: -0.03em;
+    }
+    .lead { color: var(--ink); margin: 0 0 28px; max-width: 40em; }
+    .grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 14px; }
+    article {
+      background: #12181c;
+      border: 1px solid var(--line);
+      padding: 18px 18px 16px;
+    }
+    article b {
+      display: block;
+      margin-bottom: 6px;
+      font-family: var(--mono);
+      font-size: 12px;
+      letter-spacing: 0.14em;
+      color: var(--glow);
+    }
+    article span { color: var(--ink); font-size: 15px; }
+    .keys { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 8px; }
+    .keys span {
+      border: 1px solid var(--line);
+      background: #10161a;
+      padding: 8px 12px;
+      color: var(--paper);
+      font-family: var(--mono);
+      font-size: 11px;
+      letter-spacing: 0.12em;
+    }
+    .run {
+      background:
+        linear-gradient(90deg, #11171b 0 6px, transparent 6px calc(100% - 6px), #11171b calc(100% - 6px)),
+        linear-gradient(180deg, #0b1013, var(--bezel) 50%, #0b1013);
+      border: 1px solid var(--line);
+      padding: 36px 32px;
+    }
+    .run h2 { margin-top: 0; }
+    pre {
+      margin: 0;
+      padding: 16px 18px;
+      background: var(--void);
+      border: 1px solid var(--line);
+      color: var(--glow);
+      font-family: var(--mono);
+      font-size: 13px;
+      line-height: 1.7;
+      overflow: auto;
+    }
+    footer {
+      padding: 28px 0 40px;
+      color: var(--muted);
+      font-family: var(--mono);
+      font-size: 11px;
+      letter-spacing: 0.1em;
+      display: flex;
+      justify-content: space-between;
+      gap: 12px;
+    }
+    @media (max-width: 900px) {
+      .hero, .grid, .strip { grid-template-columns: 1fr; }
+      nav a.hide { display: none; }
+      .run { padding: 28px 18px; }
+      footer { flex-direction: column; }
+    }
+  </style>
+</head>
+<body>
+  <header>
+    <div class="wrap nav">
+      <a class="brand" href="./">SUPER HERO<span>FILE MANAGER</span></a>
+      <nav>
+        <a href="#desk">Desk</a>
+        <a class="hide" href="view.html">Voice</a>
+        <a class="hide" href="#run">Run</a>
+      </nav>
+      <div class="end">
+        <a class="btn ghost" href="https://github.com/ktsoaela/super-hero-file-manager">GITHUB</a>
+        <a class="btn" href="view.html">VOICE VIEW</a>
+      </div>
+    </div>
+  </header>
+
+  <main>
+    <div class="wrap hero">
+      <div>
+        <p class="kicker">FILE MANAGER</p>
+        <h1>The folder, <span>largest first.</span></h1>
+        <p class="sub">Super Hero File Manager stacks a folder by size. Walk it, preview a file without leaving, find a name, and copy onto a volume.</p>
+        <div class="hero-actions">
+          <a class="btn" href="view.html">OPEN THE VOICE VIEW</a>
+          <a class="btn ghost" href="#walkthrough">WATCH THE DESK</a>
+        </div>
+      </div>
+      <figure class="frame" id="walkthrough">
+        <video controls playsinline preload="metadata" poster="poster.jpg">
+          <source src="explainer.mp4" type="video/mp4" />
+        </video>
+        <figcaption>A WALKTHROUGH OF THE DESK, IN DARK MODE. THE VOICE IS THE SAME ONE USED FOR PROJECT GRANDMA.</figcaption>
+      </figure>
+    </div>
+
+    <div class="wrap strip">
+      <div><b>One stack</b><span>LARGEST AT THE FRONT</span></div>
+      <div><b>One preview</b><span>SPACE, STILL IN THE FOLDER</span></div>
+      <div><b>One rail</b><span>VOLUMES, DESKTOP, PINS</span></div>
+    </div>
+
+    <section id="desk">
+      <div class="wrap">
+        <h2>What the desk does</h2>
+        <p class="lead">Windows. You open a folder. The list and the stack are the same folder. The stack is sorted by size as the sizes come in.</p>
+        <div class="grid">
+          <article>
+            <b>A STACK BY SIZE</b>
+            <span>The largest item sits at the front. Arrow keys walk the stack. The callout names the one you are on.</span>
+          </article>
+          <article>
+            <b>A PREVIEW</b>
+            <span>Space opens a file, or the contents of a folder, and you stay where you were. Escape closes it.</span>
+          </article>
+          <article>
+            <b>FIND</b>
+            <span>Ctrl+F searches this folder. Tab switches to every subfolder under it.</span>
+          </article>
+          <article>
+            <b>A VOLUME RAIL</b>
+            <span>Volumes, the desktop, and pins. Press T, or drag a row onto a volume, to copy.</span>
+          </article>
+          <article>
+            <b>A TERMINAL</b>
+            <span>Ctrl+J opens a terminal in the folder you are looking at. A bare <code>cd</code> follows the folder.</span>
+          </article>
+          <article>
+            <b>DARK MODE</b>
+            <span>The same type as the app. Bahnschrift for the interface. Cascadia Mono for the codes.</span>
+          </article>
+        </div>
+        <div class="keys">
+          <span>CTRL+F FIND</span>
+          <span>CTRL+J TERM</span>
+          <span>SPACE PREVIEW</span>
+          <span>ENTER OPEN</span>
+          <span>T TRANSFER</span>
+          <span>CTRL+L SCREEN</span>
+        </div>
+      </div>
+    </section>
+
+    <section id="run">
+      <div class="wrap run">
+        <h2>Run it</h2>
+        <p class="lead">Node.js on Windows. The dev command starts the window. The page inside it is served at http://localhost:3123.</p>
+        <pre>npm install
+npm run dev</pre>
+        <p class="fine">NPM START BUILDS THE PAGE, THEN OPENS ELECTRON.</p>
+      </div>
+    </section>
+  </main>
+
+  <footer class="wrap">
+    <span>SUPER HERO FILE MANAGER. A FILE MANAGER BY KHOTSO TSOAELA.</span>
+    <a href="https://github.com/ktsoaela/super-hero-file-manager">VIEW ON GITHUB</a>
+  </footer>
+</body>
+</html>
