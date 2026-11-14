@@ -3,7 +3,7 @@
 
   <h1>Super Hero File Manager</h1>
 
-  <p><strong>A file manager that stacks a folder by size, largest first.</strong></p>
+  <p><strong>A Windows file manager that stacks a folder by size, largest first.</strong></p>
 
   <p>
     <a href="https://ktsoaela.github.io/super-hero-file-manager/"><img alt="Docs" src="https://img.shields.io/badge/docs-guide-547f72?style=flat-square" /></a>
@@ -15,9 +15,9 @@
 
 ---
 
-**Super Hero File Manager** opens a folder as a list and as a stack. The stack is sorted by size. You can preview a file, find a name, copy onto a volume, and open a terminal in that folder.
+**Super Hero File Manager** is a Windows desktop app. It opens a folder as a list and as a stack. The stack is sorted by size. You can preview a file, find a name, copy onto a volume, and open a terminal in that folder. Volumes are read through PowerShell.
 
-The page is [https://ktsoaela.github.io/super-hero-file-manager/](https://ktsoaela.github.io/super-hero-file-manager/). The spoken walkthrough is [https://ktsoaela.github.io/super-hero-file-manager/view.html](https://ktsoaela.github.io/super-hero-file-manager/view.html).
+The public page is live at [https://ktsoaela.github.io/super-hero-file-manager/](https://ktsoaela.github.io/super-hero-file-manager/). The voice view at [https://ktsoaela.github.io/super-hero-file-manager/view.html](https://ktsoaela.github.io/super-hero-file-manager/view.html) is a styled desk that plays the walkthrough. It does not open your real folders. A browser tab without Electron uses fake sample folders.
 
 ---
 
@@ -33,7 +33,7 @@ The page is [https://ktsoaela.github.io/super-hero-file-manager/](https://ktsoae
 
 ## Quick start
 
-**Requirements:** Node.js, Windows.
+**Requirements:** Windows 10 or later. Node.js only if you run from source.
 
 ```bash
 npm install
