@@ -14,8 +14,9 @@ const { searchTree } = require('./search');
 const { runShell, stopShell } = require('./shell');
 
 const jobs = { inside: 0, rail: 0 };
-const OUT_DIR = path.join(__dirname, '..', 'out');
-const ICON = path.join(__dirname, '..', 'build', 'icon.png');
+const ROOT = path.join(__dirname, '..');
+const OUT_DIR = app.isPackaged ? path.join(process.resourcesPath, 'out') : path.join(ROOT, 'out');
+const ICON = path.join(ROOT, 'build', 'icon.png');
 const LOCK_PROBE_LIMIT = 600;
 
 protocol.registerSchemesAsPrivileged([

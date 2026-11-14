@@ -9,17 +9,39 @@
     "dev": "node scripts/dev.js",
     "build": "next build",
     "start": "next build && electron .",
-    "electron": "electron ."
+    "electron": "electron .",
+    "dist": "next build && electron-builder --win portable"
   },
   "devDependencies": {
-    "@types/three": "0.187.0",
-    "electron": "^33.4.11"
-  },
-  "dependencies": {
     "@react-three/fiber": "^9.8.2",
+    "@types/three": "0.187.0",
+    "electron": "^33.4.11",
+    "electron-builder": "^25.1.8",
     "next": "^15.5.29",
     "react": "^19.3.1",
     "react-dom": "^19.3.1",
     "three": "^0.187.0"
+  },
+  "build": {
+    "appId": "com.superhero.filemanager",
+    "productName": "Super Hero File Manager",
+    "directories": { "output": "dist" },
+    "npmRebuild": false,
+    "files": [
+      "electron/**/*",
+      "build/icon.png",
+      "package.json",
+      "!node_modules"
+    ],
+    "extraResources": [
+      { "from": "out", "to": "out" }
+    ],
+    "win": {
+      "target": ["portable"],
+      "icon": "build/icon.png"
+    },
+    "portable": {
+      "artifactName": "Super-Hero-File-Manager.exe"
+    }
   }
 }

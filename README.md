@@ -42,9 +42,10 @@ npm run dev
 
 | Goal | Command |
 | --- | --- |
-| Run the app | `npm run dev` → http://localhost:3123 |
-| Build, then open | `npm start` |
-| Open the last build | `npm run electron` |
+| Download for Windows | [Super-Hero-File-Manager.exe](https://github.com/ktsoaela/super-hero-file-manager/releases/download/v1/Super-Hero-File-Manager.exe) |
+| Run from source | `npm run dev` → http://localhost:3123 |
+| Build the page, then open | `npm start` |
+| Build the Windows exe | `npm run dist` → `dist/Super-Hero-File-Manager.exe` |
 | Voice view | Open [https://ktsoaela.github.io/super-hero-file-manager/view.html](https://ktsoaela.github.io/super-hero-file-manager/view.html) and press Listen |
 | Record the walkthrough again | `python scripts/record_explainer.py` with `npx next dev -p 3123` already running |
 
